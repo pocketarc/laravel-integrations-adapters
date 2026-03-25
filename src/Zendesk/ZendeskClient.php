@@ -1,0 +1,552 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Integrations\Adapters\Zendesk;
+
+use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
+use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
+use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
+use Integrations\Exceptions\RetriesExhaustedException;
+use Integrations\Models\Integration;
+use stdClass;
+use Zendesk\API\Exceptions\ApiResponseException;
+use Zendesk\API\HttpClient as ZendeskAPI;
+
+class ZendeskClient
+{
+    private ZendeskAPI $sdk;
+
+    private string $subdomain;
+
+    private string $email;
+
+    private string $token;
+
+    public function __construct(Integration $integration)
+    {
+        $credentials = $integration->credentials;
+        $metadata = $integration->metadata;
+
+        if (! $credentials instanceof ZendeskCredentials || ! $metadata instanceof ZendeskMetadata) {
+            throw new \RuntimeException('Invalid Zendesk integration: credentials or metadata type mismatch.');
+        }
+
+        $this->subdomain = $metadata->subdomain;
+        $this->email = $credentials->email;
+        $this->token = $credentials->token;
+
+        $this->sdk = new ZendeskAPI($this->subdomain);
+        $this->sdk->setAuth('basic', [
+            'username' => $this->email,
+            'token' => $this->token,
+        ]);
+    }
+
+    public function getSdkClient(): ZendeskAPI
+    {
+        return $this->sdk;
+    }
+
+    /**
+     * Iterate through all tickets and call the callback for each.
+     *
+     * @param  callable(object): void  $callback
+     */
+    public function getTickets(callable $callback): void
+    {
+        $iterator = $this->sdk->tickets()->iterator();
+
+        foreach ($iterator as $ticket) {
+            if (is_object($ticket)) {
+                $callback($ticket);
+            }
+        }
+    }
+
+    /**
+     * Get tickets modified since a specific time (incremental sync).
+     * Uses the Ticket Export API with sideloading for efficiency.
+     *
+     * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
+     */
+    public function getTicketsSince(\DateTimeInterface $startTime, callable $callback): void
+    {
+        $timestamp = $startTime->getTimestamp();
+
+        try {
+            do {
+                $start = Carbon::createFromTimestamp($timestamp);
+                Log::info("ZendeskClient: Fetching tickets since start_time={$start->toDateTimeString()}");
+
+                $this->sdk->setApiBasePath('api/v2/');
+
+                $response = $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
+                    $this->sdk,
+                    'incremental/tickets.json',
+                    [
+                        'queryParams' => [
+                            'start_time' => $timestamp,
+                            'include' => 'users',
+                        ],
+                    ]
+                ));
+
+                if ($response === null) {
+                    Log::warning('ZendeskClient: API returned null response, breaking loop');
+                    break;
+                }
+
+                /** @var list<object> $usersArray */
+                $usersArray = is_array($response->users) ? $response->users : [];
+                /** @var list<object> $ticketsArray */
+                $ticketsArray = is_array($response->tickets) ? $response->tickets : [];
+
+                Log::info('ZendeskClient: API response received', [
+                    'tickets_count' => count($ticketsArray),
+                    'users_count' => count($usersArray),
+                    'has_next_page' => $response->next_page !== null,
+                ]);
+
+                if (count($ticketsArray) === 0) {
+                    break;
+                }
+
+                $users = collect($usersArray)
+                    ->keyBy('id')
+                    ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
+
+                foreach ($ticketsArray as $ticketObj) {
+                    $ticketArray = json_decode((string) json_encode($ticketObj), true);
+                    if (! is_array($ticketArray)) {
+                        continue;
+                    }
+                    $ticketArray = $this->normalizeViaChannel($ticketArray);
+                    $ticket = ZendeskTicketData::from($ticketArray);
+                    $user = $users[$ticket->requester_id] ?? null;
+
+                    try {
+                        $callback($ticket, $user);
+                    } catch (\Throwable $e) {
+                        Log::error("ZendeskClient: Callback failed for ticket {$ticket->id}: {$e->getMessage()}");
+                        report($e);
+                    }
+                }
+
+                $nextPage = is_string($response->next_page);
+                if ($nextPage) {
+                    $urlParts = parse_url($response->next_page);
+                    $queryString = is_array($urlParts) && isset($urlParts['query']) ? $urlParts['query'] : '';
+                    parse_str($queryString, $queryParams);
+                    $newTimestamp = isset($queryParams['start_time']) && is_numeric($queryParams['start_time']) ? (int) $queryParams['start_time'] : $timestamp;
+                    if ($newTimestamp > $timestamp) {
+                        $timestamp = $newTimestamp;
+                    } else {
+                        $nextPage = false;
+                    }
+                }
+            } while ($nextPage);
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+        }
+    }
+
+    /**
+     * Get tickets with external ID greater than the specified minimum.
+     * Fetches recent tickets via Search API and filters locally by ID.
+     *
+     * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
+     */
+    public function getTicketsNewerThan(int $minExternalId, callable $callback): void
+    {
+        try {
+            $page = 1;
+            $foundOlderTicket = false;
+
+            do {
+                $this->sdk->setApiBasePath('api/v2/');
+
+                $response = $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
+                    $this->sdk,
+                    'search.json',
+                    [
+                        'queryParams' => [
+                            'query' => 'type:ticket',
+                            'sort_by' => 'created_at',
+                            'sort_order' => 'desc',
+                            'page' => $page,
+                        ],
+                    ]
+                ));
+
+                if ($response === null) {
+                    break;
+                }
+
+                /** @var list<object> $resultsArray */
+                $resultsArray = is_array($response->results) ? $response->results : [];
+
+                foreach ($resultsArray as $ticketObj) {
+                    $ticketArray = json_decode((string) json_encode($ticketObj), true);
+                    if (! is_array($ticketArray)) {
+                        continue;
+                    }
+                    $ticket = ZendeskTicketData::from($ticketArray);
+
+                    if ($ticket->id <= $minExternalId) {
+                        $foundOlderTicket = true;
+
+                        continue;
+                    }
+
+                    $user = null;
+                    $userObj = $this->getUser($ticket->requester_id);
+                    if ($userObj !== null) {
+                        $user = ZendeskUserData::createFromZendeskResponse($userObj);
+                    }
+
+                    $callback($ticket, $user);
+                }
+
+                if ($foundOlderTicket) {
+                    break;
+                }
+
+                $hasNextPage = $response->next_page !== null;
+                $page++;
+            } while ($hasNextPage);
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+        }
+    }
+
+    /**
+     * Iterate through all users and call the callback for each.
+     *
+     * @param  (callable(ZendeskUserData): void)|null  $callback
+     * @return Collection<int, ZendeskUserData>
+     */
+    public function getUsers(?callable $callback = null): Collection
+    {
+        $iterator = $this->sdk->users()->iterator();
+
+        /** @var Collection<int, ZendeskUserData> $users */
+        $users = new Collection;
+        foreach ($iterator as $user) {
+            if (! is_object($user)) {
+                continue;
+            }
+            $data = ZendeskUserData::createFromZendeskResponse($user);
+            if ($callback !== null) {
+                $callback($data);
+            }
+
+            $users->push($data);
+        }
+
+        return $users;
+    }
+
+    /**
+     * Iterate through all comments for a ticket.
+     *
+     * @param  callable(ZendeskCommentData): void  $callback
+     */
+    public function getTicketComments(int $ticketId, callable $callback): void
+    {
+        $commentsResponse = $this->executeWithRetry(
+            fn () => $this->sdk->tickets($ticketId)->comments()->findAll()
+        );
+
+        if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
+            return;
+        }
+
+        foreach ($commentsResponse->comments as $commentObj) {
+            $commentArray = json_decode((string) json_encode($commentObj), true);
+            if (! is_array($commentArray)) {
+                continue;
+            }
+            $commentArray = $this->normalizeViaChannel($commentArray);
+            $comment = ZendeskCommentData::from($commentArray);
+            $callback($comment);
+        }
+    }
+
+    public function downloadAttachment(string $url): ?string
+    {
+        try {
+            $response = Http::timeout(120)->get($url);
+
+            if ($response->successful()) {
+                return $response->body();
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * Get a fresh content_url for an attachment by fetching comments from its ticket.
+     */
+    public function getFreshAttachmentUrl(int $ticketExternalId, int $attachmentId): ?string
+    {
+        try {
+            $commentsResponse = $this->sdk->tickets($ticketExternalId)->comments()->findAll();
+
+            if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
+                return null;
+            }
+
+            foreach ($commentsResponse->comments as $comment) {
+                if (! $comment instanceof stdClass) {
+                    continue;
+                }
+                $attachments = $comment->attachments ?? [];
+                if (! is_array($attachments)) {
+                    continue;
+                }
+                foreach ($attachments as $attachment) {
+                    if (! $attachment instanceof stdClass) {
+                        continue;
+                    }
+                    if (isset($attachment->id) && $attachment->id === $attachmentId) {
+                        return isset($attachment->content_url) && is_string($attachment->content_url) ? $attachment->content_url : null;
+                    }
+                }
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return null;
+        }
+    }
+
+    public function getTicket(int $ticketId): ?stdClass
+    {
+        try {
+            $response = $this->sdk->tickets()->find($ticketId);
+            $ticket = $response->ticket ?? null;
+
+            return $ticket instanceof stdClass ? $ticket : null;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return null;
+        }
+    }
+
+    public function getUser(int $userId): ?stdClass
+    {
+        try {
+            $response = $this->sdk->users()->find($userId);
+            $user = $response->user ?? null;
+
+            return $user instanceof stdClass ? $user : null;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return null;
+        }
+    }
+
+    public function closeTicket(int $ticketId): bool
+    {
+        try {
+            $this->sdk->tickets()->update($ticketId, ['status' => 'solved']);
+
+            return true;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return false;
+        }
+    }
+
+    public function reopenTicket(int $ticketId): bool
+    {
+        try {
+            $this->sdk->tickets()->update($ticketId, ['status' => 'open']);
+
+            return true;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return false;
+        }
+    }
+
+    /**
+     * @return stdClass|null The Zendesk API response
+     */
+    public function addComment(int $ticketId, string $comment): ?stdClass
+    {
+        try {
+            $response = $this->sdk->tickets()->update($ticketId, [
+                'comment' => [
+                    'body' => $comment,
+                    'public' => true,
+                ],
+            ]);
+
+            return $response instanceof stdClass ? $response : null;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * @return stdClass|null The Zendesk API response
+     */
+    public function addInternalNote(int $ticketId, string $note): ?stdClass
+    {
+        try {
+            $response = $this->sdk->tickets()->update($ticketId, [
+                'comment' => [
+                    'body' => $note,
+                    'public' => false,
+                ],
+            ]);
+
+            return $response instanceof stdClass ? $response : null;
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @return T
+     *
+     * @throws \Throwable
+     */
+    private function executeWithRetry(callable $callback, int $maxRetries = 3): mixed
+    {
+        $lastException = null;
+        $retriesMade = 0;
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            try {
+                return $callback();
+            } catch (ApiResponseException $e) {
+                $lastException = $e;
+                $statusCode = $this->getStatusCodeFromException($e);
+
+                if ($statusCode === 429 && $attempt < $maxRetries) {
+                    $retriesMade++;
+                    $delay = 30;
+                    Log::warning("ZendeskClient: Rate limited (429), retry {$attempt}/{$maxRetries} in {$delay}s");
+                    sleep($delay);
+
+                    continue;
+                }
+
+                if ($statusCode !== null && $statusCode >= 500 && $statusCode < 600 && $attempt < $maxRetries) {
+                    $retriesMade++;
+                    $delay = $attempt;
+                    Log::warning("ZendeskClient: Server error ({$statusCode}), retry {$attempt}/{$maxRetries} in {$delay}s");
+                    sleep($delay);
+
+                    continue;
+                }
+
+                if ($retriesMade > 0) {
+                    throw new RetriesExhaustedException($retriesMade, $e);
+                }
+                throw $e;
+            }
+        }
+
+        throw $lastException ?? new \RuntimeException('Retry logic exhausted without result');
+    }
+
+    private function getStatusCodeFromException(ApiResponseException $e): ?int
+    {
+        $previous = $e->getPrevious();
+        if ($previous instanceof GuzzleRequestException && $previous->getResponse() !== null) {
+            return $previous->getResponse()->getStatusCode();
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $data
+     * @return array<mixed, mixed>
+     */
+    private function normalizeViaChannel(array $data): array
+    {
+        if (isset($data['via']) && is_array($data['via']) && isset($data['via']['channel']) && is_int($data['via']['channel'])) {
+            $data['via']['channel'] = (string) $data['via']['channel'];
+        }
+
+        return $data;
+    }
+}
