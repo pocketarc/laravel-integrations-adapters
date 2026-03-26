@@ -283,23 +283,33 @@ class ZendeskClient
      */
     public function getTicketComments(int $ticketId, callable $callback): void
     {
-        $commentsResponse = $this->executeWithRetry(
-            fn () => $this->sdk->tickets($ticketId)->comments()->findAll()
-        );
+        /** @var array<string, mixed> $params */
+        $params = ['page[size]' => 100];
 
-        if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
-            return;
-        }
+        do {
+            $commentsResponse = $this->executeWithRetry(
+                fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
+            );
 
-        foreach ($commentsResponse->comments as $commentObj) {
-            $commentArray = json_decode((string) json_encode($commentObj), true);
-            if (! is_array($commentArray)) {
-                continue;
+            if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
+                return;
             }
-            $commentArray = $this->normalizeViaChannel($commentArray);
-            $comment = ZendeskCommentData::from($commentArray);
-            $callback($comment);
-        }
+
+            foreach ($commentsResponse->comments as $commentObj) {
+                $commentArray = json_decode((string) json_encode($commentObj), true);
+                if (! is_array($commentArray)) {
+                    continue;
+                }
+                $commentArray = $this->normalizeViaChannel($commentArray);
+                $comment = ZendeskCommentData::from($commentArray);
+                $callback($comment);
+            }
+
+            $cursor = $this->getNextCursor($commentsResponse);
+            if ($cursor !== null) {
+                $params['page[after]'] = $cursor;
+            }
+        } while ($cursor !== null);
     }
 
     public function downloadAttachment(string $url): ?string
@@ -317,31 +327,41 @@ class ZendeskClient
     public function getFreshAttachmentUrl(int $ticketId, int $attachmentId): ?string
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $attachmentId): ?string {
-            $commentsResponse = $this->executeWithRetry(
-                fn () => $this->sdk->tickets($ticketId)->comments()->findAll()
-            );
+            /** @var array<string, mixed> $params */
+            $params = ['page[size]' => 100];
 
-            if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
-                return null;
-            }
+            do {
+                $commentsResponse = $this->executeWithRetry(
+                    fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
+                );
 
-            foreach ($commentsResponse->comments as $comment) {
-                if (! $comment instanceof stdClass) {
-                    continue;
+                if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
+                    return null;
                 }
-                $attachments = $comment->attachments ?? [];
-                if (! is_array($attachments)) {
-                    continue;
-                }
-                foreach ($attachments as $attachment) {
-                    if (! $attachment instanceof stdClass) {
+
+                foreach ($commentsResponse->comments as $comment) {
+                    if (! $comment instanceof stdClass) {
                         continue;
                     }
-                    if (isset($attachment->id) && $attachment->id === $attachmentId) {
-                        return isset($attachment->content_url) && is_string($attachment->content_url) ? $attachment->content_url : null;
+                    $attachments = $comment->attachments ?? [];
+                    if (! is_array($attachments)) {
+                        continue;
+                    }
+                    foreach ($attachments as $attachment) {
+                        if (! $attachment instanceof stdClass) {
+                            continue;
+                        }
+                        if (isset($attachment->id) && $attachment->id === $attachmentId) {
+                            return isset($attachment->content_url) && is_string($attachment->content_url) ? $attachment->content_url : null;
+                        }
                     }
                 }
-            }
+
+                $cursor = $this->getNextCursor($commentsResponse);
+                if ($cursor !== null) {
+                    $params['page[after]'] = $cursor;
+                }
+            } while ($cursor !== null);
 
             return null;
         });
@@ -513,6 +533,27 @@ class ZendeskClient
         }
 
         return null;
+    }
+
+    private function getNextCursor(mixed $response): ?string
+    {
+        if (! $response instanceof stdClass) {
+            return null;
+        }
+
+        $meta = $response->meta ?? null;
+        if (! $meta instanceof stdClass) {
+            return null;
+        }
+
+        $hasMore = $meta->has_more ?? false;
+        if ($hasMore !== true) {
+            return null;
+        }
+
+        $cursor = $meta->after_cursor ?? null;
+
+        return is_string($cursor) ? $cursor : null;
     }
 
     /**

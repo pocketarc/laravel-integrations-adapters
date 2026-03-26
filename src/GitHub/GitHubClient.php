@@ -99,6 +99,9 @@ class GitHubClient
             );
         } catch (\Throwable $e) {
             report($e);
+            if (config('app.debug') === true) {
+                throw $e;
+            }
 
             return null;
         }
