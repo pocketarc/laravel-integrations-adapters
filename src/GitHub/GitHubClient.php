@@ -249,7 +249,8 @@ class GitHubClient
             $parsedUrl = parse_url($url);
             $domain = is_array($parsedUrl) && isset($parsedUrl['host']) ? $parsedUrl['host'] : '';
 
-            if (str_ends_with($domain, 'github.com') || str_ends_with($domain, 'githubusercontent.com')) {
+            if ($domain === 'github.com' || str_ends_with($domain, '.github.com')
+                || $domain === 'githubusercontent.com' || str_ends_with($domain, '.githubusercontent.com')) {
                 $headers = [
                     'Accept' => 'application/octet-stream',
                     'Authorization' => 'Bearer '.$this->token,

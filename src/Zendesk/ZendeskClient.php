@@ -123,18 +123,20 @@ class ZendeskClient
                     ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
 
                 foreach ($ticketsArray as $ticketObj) {
-                    $ticketArray = json_decode((string) json_encode($ticketObj), true);
-                    if (! is_array($ticketArray)) {
-                        continue;
-                    }
-                    $ticketArray = $this->normalizeViaChannel($ticketArray);
-                    $ticket = ZendeskTicketData::from($ticketArray);
-                    $user = $users[$ticket->requester_id] ?? null;
-
                     try {
+                        $ticketArray = json_decode((string) json_encode($ticketObj), true);
+                        if (! is_array($ticketArray)) {
+                            continue;
+                        }
+                        $ticketArray = $this->normalizeViaChannel($ticketArray);
+                        $ticket = ZendeskTicketData::from($ticketArray);
+                        $user = $users[$ticket->requester_id] ?? null;
+
                         $callback($ticket, $user);
                     } catch (\Throwable $e) {
-                        Log::error("ZendeskClient: Callback failed for ticket {$ticket->id}: {$e->getMessage()}");
+                        $rawId = is_array($ticketArray ?? null) ? ($ticketArray['id'] ?? null) : null;
+                        $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
+                        Log::error("ZendeskClient: Failed processing ticket {$failedId}: {$e->getMessage()}");
                         report($e);
                     }
                 }
@@ -163,12 +165,12 @@ class ZendeskClient
     }
 
     /**
-     * Get tickets with external ID greater than the specified minimum.
+     * Get tickets with ID greater than the specified minimum.
      * Fetches recent tickets via Search API and filters locally by ID.
      *
      * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
      */
-    public function getTicketsNewerThan(int $minExternalId, callable $callback): void
+    public function getTicketsNewerThan(int $minId, callable $callback): void
     {
         try {
             $page = 1;
@@ -205,25 +207,27 @@ class ZendeskClient
                     ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
 
                 foreach ($resultsArray as $ticketObj) {
-                    $ticketArray = json_decode((string) json_encode($ticketObj), true);
-                    if (! is_array($ticketArray)) {
-                        continue;
-                    }
-                    $ticketArray = $this->normalizeViaChannel($ticketArray);
-                    $ticket = ZendeskTicketData::from($ticketArray);
-
-                    if ($ticket->id <= $minExternalId) {
-                        $foundOlderTicket = true;
-
-                        continue;
-                    }
-
-                    $user = $users[$ticket->requester_id] ?? null;
-
                     try {
+                        $ticketArray = json_decode((string) json_encode($ticketObj), true);
+                        if (! is_array($ticketArray)) {
+                            continue;
+                        }
+                        $ticketArray = $this->normalizeViaChannel($ticketArray);
+                        $ticket = ZendeskTicketData::from($ticketArray);
+
+                        if ($ticket->id <= $minId) {
+                            $foundOlderTicket = true;
+
+                            continue;
+                        }
+
+                        $user = $users[$ticket->requester_id] ?? null;
+
                         $callback($ticket, $user);
                     } catch (\Throwable $e) {
-                        Log::error("ZendeskClient: Callback failed for ticket {$ticket->id}: {$e->getMessage()}");
+                        $rawId = is_array($ticketArray ?? null) ? ($ticketArray['id'] ?? null) : null;
+                        $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
+                        Log::error("ZendeskClient: Failed processing ticket {$failedId}: {$e->getMessage()}");
                         report($e);
                     }
                 }
@@ -310,11 +314,11 @@ class ZendeskClient
     /**
      * Get a fresh content_url for an attachment by fetching comments from its ticket.
      */
-    public function getFreshAttachmentUrl(int $ticketExternalId, int $attachmentId): ?string
+    public function getFreshAttachmentUrl(int $ticketId, int $attachmentId): ?string
     {
-        return $this->executeWithErrorHandling(function () use ($ticketExternalId, $attachmentId): ?string {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $attachmentId): ?string {
             $commentsResponse = $this->executeWithRetry(
-                fn () => $this->sdk->tickets($ticketExternalId)->comments()->findAll()
+                fn () => $this->sdk->tickets($ticketId)->comments()->findAll()
             );
 
             if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
