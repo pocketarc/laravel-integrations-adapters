@@ -64,8 +64,12 @@ class ZendeskProvider implements HasHealthCheck, IntegrationProvider
         }
 
         try {
+            $baseUrl = $metadata->custom_domain ?? "https://{$metadata->subdomain}.zendesk.com";
+
             $response = Http::withBasicAuth("{$credentials->email}/token", $credentials->token)
-                ->get("https://{$metadata->subdomain}.zendesk.com/api/v2/users/me.json");
+                ->connectTimeout(5)
+                ->timeout(10)
+                ->get("{$baseUrl}/api/v2/users/me.json");
 
             return $response->successful();
         } catch (\Throwable) {

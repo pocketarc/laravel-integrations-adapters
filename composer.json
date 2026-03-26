@@ -15,7 +15,7 @@
         "php": "^8.3",
         "knplabs/github-api": "^3.16",
         "php-http/guzzle7-adapter": "^1.0",
-        "pocketarc/laravel-integrations": "dev-main",
+        "pocketarc/laravel-integrations": "^1.0",
         "spatie/laravel-data": "^4.0",
         "zendesk/zendesk_api_client_php": "^4.1"
     },
@@ -37,7 +37,7 @@
             "Integrations\\Adapters\\Tests\\": "tests/"
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true,
     "config": {
         "sort-packages": true,

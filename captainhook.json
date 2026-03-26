@@ -11,17 +11,17 @@
         "enabled": true,
         "actions": [
             {
-                "action": "docker compose exec -T devtools ./vendor/bin/pint",
+                "action": "docker compose run --rm -T devtools ./vendor/bin/pint",
                 "options": [],
                 "conditions": []
             },
             {
-                "action": "docker compose exec -T devtools ./vendor/bin/phpstan analyse --memory-limit=1G --no-progress",
+                "action": "docker compose run --rm -T devtools ./vendor/bin/phpstan analyse --memory-limit=1G --no-progress",
                 "options": [],
                 "conditions": []
             },
             {
-                "action": "docker compose exec -T devtools ./vendor/bin/phpunit",
+                "action": "docker compose run --rm -T devtools ./vendor/bin/phpunit",
                 "options": [],
                 "conditions": []
             }

@@ -17,10 +17,13 @@ RUN docker-php-ext-install -j$(nproc) \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -m appuser
+ARG UID=1000
+ARG GID=1000
+
+RUN groupadd -g "${GID}" appuser && useradd -u "${UID}" -g appuser -m appuser
 
 WORKDIR /var/www/html
-RUN chown appuser:appuser /var/www/html
+RUN chown "${UID}:${GID}" /var/www/html
 
 USER appuser
 

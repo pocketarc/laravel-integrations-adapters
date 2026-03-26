@@ -65,6 +65,8 @@ class GitHubProvider implements HasHealthCheck, IntegrationProvider
         try {
             $response = Http::withToken($credentials->token)
                 ->withHeaders(['Accept' => 'application/vnd.github.v3+json'])
+                ->connectTimeout(5)
+                ->timeout(10)
                 ->get("https://api.github.com/repos/{$metadata->owner}/{$metadata->repo}");
 
             return $response->successful();

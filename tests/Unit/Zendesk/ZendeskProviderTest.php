@@ -75,8 +75,9 @@ class ZendeskProviderTest extends TestCase
 
     public function test_health_check_returns_true_on_success(): void
     {
+        Http::preventStrayRequests();
         Http::fake([
-            'acme.zendesk.com/api/v2/users/me.json' => Http::response(['user' => ['id' => 1]], 200),
+            'https://acme.zendesk.com/api/v2/users/me.json' => Http::response(['user' => ['id' => 1]], 200),
         ]);
 
         $provider = new ZendeskProvider;
@@ -92,8 +93,9 @@ class ZendeskProviderTest extends TestCase
 
     public function test_health_check_returns_false_on_failure(): void
     {
+        Http::preventStrayRequests();
         Http::fake([
-            'acme.zendesk.com/api/v2/users/me.json' => Http::response('Unauthorized', 401),
+            'https://acme.zendesk.com/api/v2/users/me.json' => Http::response('Unauthorized', 401),
         ]);
 
         $provider = new ZendeskProvider;
@@ -105,5 +107,23 @@ class ZendeskProviderTest extends TestCase
         );
 
         $this->assertFalse($provider->healthCheck($integration));
+    }
+
+    public function test_health_check_uses_custom_domain_when_set(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://support.acme.com/api/v2/users/me.json' => Http::response(['user' => ['id' => 1]], 200),
+        ]);
+
+        $provider = new ZendeskProvider;
+        $integration = $this->createIntegration(
+            providerKey: 'zendesk',
+            providerClass: ZendeskProvider::class,
+            credentials: ['email' => 'admin@acme.com', 'token' => 'abc123'],
+            metadata: ['subdomain' => 'acme', 'custom_domain' => 'https://support.acme.com'],
+        );
+
+        $this->assertTrue($provider->healthCheck($integration));
     }
 }

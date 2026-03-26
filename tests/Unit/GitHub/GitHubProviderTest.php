@@ -73,8 +73,9 @@ class GitHubProviderTest extends TestCase
 
     public function test_health_check_returns_true_on_success(): void
     {
+        Http::preventStrayRequests();
         Http::fake([
-            'api.github.com/repos/pocketarc/laravel-integrations' => Http::response(['id' => 1], 200),
+            'https://api.github.com/repos/pocketarc/laravel-integrations' => Http::response(['id' => 1], 200),
         ]);
 
         $provider = new GitHubProvider;
@@ -90,8 +91,9 @@ class GitHubProviderTest extends TestCase
 
     public function test_health_check_returns_false_on_failure(): void
     {
+        Http::preventStrayRequests();
         Http::fake([
-            'api.github.com/repos/pocketarc/laravel-integrations' => Http::response('Not Found', 404),
+            'https://api.github.com/repos/pocketarc/laravel-integrations' => Http::response('Not Found', 404),
         ]);
 
         $provider = new GitHubProvider;
