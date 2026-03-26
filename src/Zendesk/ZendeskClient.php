@@ -209,6 +209,7 @@ class ZendeskClient
                     if (! is_array($ticketArray)) {
                         continue;
                     }
+                    $ticketArray = $this->normalizeViaChannel($ticketArray);
                     $ticket = ZendeskTicketData::from($ticketArray);
 
                     if ($ticket->id <= $minExternalId) {
@@ -219,7 +220,12 @@ class ZendeskClient
 
                     $user = $users[$ticket->requester_id] ?? null;
 
-                    $callback($ticket, $user);
+                    try {
+                        $callback($ticket, $user);
+                    } catch (\Throwable $e) {
+                        Log::error("ZendeskClient: Callback failed for ticket {$ticket->id}: {$e->getMessage()}");
+                        report($e);
+                    }
                 }
 
                 if ($foundOlderTicket) {

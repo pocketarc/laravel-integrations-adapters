@@ -276,6 +276,10 @@ class GitHubClient
 
     public function closeIssue(int $issueNumber, ?GitHubIssueStateReason $stateReason = null): bool
     {
+        if ($stateReason === GitHubIssueStateReason::Reopened) {
+            throw new \DomainException('Cannot close an issue with state_reason "reopened".');
+        }
+
         try {
             $params = ['state' => 'closed'];
 
