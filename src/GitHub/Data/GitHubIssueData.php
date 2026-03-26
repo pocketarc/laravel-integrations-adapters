@@ -51,6 +51,8 @@ class GitHubIssueData extends Data
      */
     public static function createFromGitHubResponse(array $data): self
     {
+        $original = $data;
+
         $body = is_string($data['body'] ?? null) ? $data['body'] : '';
         $bodyHtml = is_string($data['body_html'] ?? null) ? $data['body_html'] : '';
 
@@ -58,7 +60,7 @@ class GitHubIssueData extends Data
             ->map(fn (GitHubAttachmentData $a) => $a->toArray())
             ->toArray();
         $data['body'] = $body;
-        $data['original'] = $data;
+        $data['original'] = $original;
 
         return self::from($data);
     }

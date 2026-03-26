@@ -14,6 +14,7 @@ use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
 use Integrations\Exceptions\RetriesExhaustedException;
 use Integrations\Models\Integration;
+use RuntimeException;
 use stdClass;
 use Zendesk\API\Exceptions\ApiResponseException;
 use Zendesk\API\HttpClient as ZendeskAPI;
@@ -34,7 +35,7 @@ class ZendeskClient
         $metadata = $integration->metadata;
 
         if (! $credentials instanceof ZendeskCredentials || ! $metadata instanceof ZendeskMetadata) {
-            throw new \RuntimeException('Invalid Zendesk integration: credentials or metadata type mismatch.');
+            throw new RuntimeException('Invalid Zendesk integration: credentials or metadata type mismatch.');
         }
 
         $this->subdomain = $metadata->subdomain;
@@ -185,6 +186,7 @@ class ZendeskClient
                             'sort_by' => 'created_at',
                             'sort_order' => 'desc',
                             'page' => $page,
+                            'include' => 'tickets(users)',
                         ],
                     ]
                 ));
@@ -195,6 +197,12 @@ class ZendeskClient
 
                 /** @var list<object> $resultsArray */
                 $resultsArray = is_array($response->results) ? $response->results : [];
+
+                /** @var list<object> $usersArray */
+                $usersArray = isset($response->users) && is_array($response->users) ? $response->users : [];
+                $users = collect($usersArray)
+                    ->keyBy('id')
+                    ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
 
                 foreach ($resultsArray as $ticketObj) {
                     $ticketArray = json_decode((string) json_encode($ticketObj), true);
@@ -209,11 +217,7 @@ class ZendeskClient
                         continue;
                     }
 
-                    $user = null;
-                    $userObj = $this->getUser($ticket->requester_id);
-                    if ($userObj !== null) {
-                        $user = ZendeskUserData::createFromZendeskResponse($userObj);
-                    }
+                    $user = $users[$ticket->requester_id] ?? null;
 
                     $callback($ticket, $user);
                 }
@@ -290,24 +294,11 @@ class ZendeskClient
 
     public function downloadAttachment(string $url): ?string
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($url): ?string {
             $response = Http::timeout(120)->get($url);
 
-            if ($response->successful()) {
-                return $response->body();
-            }
-
-            return null;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return null;
-        }
+            return $response->successful() ? $response->body() : null;
+        });
     }
 
     /**
@@ -315,8 +306,10 @@ class ZendeskClient
      */
     public function getFreshAttachmentUrl(int $ticketExternalId, int $attachmentId): ?string
     {
-        try {
-            $commentsResponse = $this->sdk->tickets($ticketExternalId)->comments()->findAll();
+        return $this->executeWithErrorHandling(function () use ($ticketExternalId, $attachmentId): ?string {
+            $commentsResponse = $this->executeWithRetry(
+                fn () => $this->sdk->tickets($ticketExternalId)->comments()->findAll()
+            );
 
             if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
                 return null;
@@ -341,90 +334,45 @@ class ZendeskClient
             }
 
             return null;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return null;
-        }
+        });
     }
 
     public function getTicket(int $ticketId): ?stdClass
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($ticketId): ?stdClass {
             $response = $this->sdk->tickets()->find($ticketId);
             $ticket = $response->ticket ?? null;
 
             return $ticket instanceof stdClass ? $ticket : null;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return null;
-        }
+        });
     }
 
     public function getUser(int $userId): ?stdClass
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($userId): ?stdClass {
             $response = $this->sdk->users()->find($userId);
             $user = $response->user ?? null;
 
             return $user instanceof stdClass ? $user : null;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return null;
-        }
+        });
     }
 
     public function closeTicket(int $ticketId): bool
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($ticketId): bool {
             $this->sdk->tickets()->update($ticketId, ['status' => 'solved']);
 
             return true;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return false;
-        }
+        }, false);
     }
 
     public function reopenTicket(int $ticketId): bool
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($ticketId): bool {
             $this->sdk->tickets()->update($ticketId, ['status' => 'open']);
 
             return true;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return false;
-        }
+        }, false);
     }
 
     /**
@@ -432,7 +380,7 @@ class ZendeskClient
      */
     public function addComment(int $ticketId, string $comment): ?stdClass
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?stdClass {
             $response = $this->sdk->tickets()->update($ticketId, [
                 'comment' => [
                     'body' => $comment,
@@ -441,16 +389,7 @@ class ZendeskClient
             ]);
 
             return $response instanceof stdClass ? $response : null;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return null;
-        }
+        });
     }
 
     /**
@@ -458,7 +397,7 @@ class ZendeskClient
      */
     public function addInternalNote(int $ticketId, string $note): ?stdClass
     {
-        try {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?stdClass {
             $response = $this->sdk->tickets()->update($ticketId, [
                 'comment' => [
                     'body' => $note,
@@ -467,16 +406,7 @@ class ZendeskClient
             ]);
 
             return $response instanceof stdClass ? $response : null;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return null;
-        }
+        });
     }
 
     /**
@@ -501,7 +431,7 @@ class ZendeskClient
 
                 if ($statusCode === 429 && $attempt < $maxRetries) {
                     $retriesMade++;
-                    $delay = 30;
+                    $delay = $this->getRetryAfterDelay($e) ?? 30;
                     Log::warning("ZendeskClient: Rate limited (429), retry {$attempt}/{$maxRetries} in {$delay}s");
                     sleep($delay);
 
@@ -524,7 +454,30 @@ class ZendeskClient
             }
         }
 
-        throw $lastException ?? new \RuntimeException('Retry logic exhausted without result');
+        throw $lastException ?? new RuntimeException('Retry logic exhausted without result');
+    }
+
+    /**
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @param  T  $default
+     * @return T
+     */
+    private function executeWithErrorHandling(callable $callback, mixed $default = null): mixed
+    {
+        try {
+            return $callback();
+        } catch (\Throwable $e) {
+            if (config('app.debug') === true) {
+                throw $e;
+            }
+
+            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
+            report($e);
+
+            return $default;
+        }
     }
 
     private function getStatusCodeFromException(ApiResponseException $e): ?int
@@ -532,6 +485,21 @@ class ZendeskClient
         $previous = $e->getPrevious();
         if ($previous instanceof GuzzleRequestException && $previous->getResponse() !== null) {
             return $previous->getResponse()->getStatusCode();
+        }
+
+        return null;
+    }
+
+    private function getRetryAfterDelay(ApiResponseException $e): ?int
+    {
+        $previous = $e->getPrevious();
+        if (! $previous instanceof GuzzleRequestException || $previous->getResponse() === null) {
+            return null;
+        }
+
+        $retryAfter = $previous->getResponse()->getHeaderLine('Retry-After');
+        if ($retryAfter !== '' && is_numeric($retryAfter)) {
+            return min((int) $retryAfter, 60);
         }
 
         return null;

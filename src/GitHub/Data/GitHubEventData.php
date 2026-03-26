@@ -99,6 +99,7 @@ class GitHubEventData extends Data
             'milestone' => $this->milestone,
             'rename' => $this->rename,
             'commit_id' => $this->commit_id,
+            'state_reason' => $this->state_reason,
             'source_type' => $this->source_type,
             'source_number' => $this->source_number,
             'source' => $this->source,

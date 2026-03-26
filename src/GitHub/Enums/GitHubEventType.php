@@ -103,7 +103,7 @@ enum GitHubEventType: string
             self::RemovedFromProjectV2 => 'Removed from project',
             self::ProjectV2ItemStatusChanged => 'Project status changed',
             self::ConvertedToDiscussion => 'Converted to discussion',
-            self::IssueTypeAdded => 'Added issue type'.self::str($eventData, 'issue_type.name'),
+            self::IssueTypeAdded => 'Added issue type'.self::prefixIfNotEmpty(': ', self::str($eventData, 'issue_type.name')),
             self::IssueTypeChanged => self::describeIssueTypeChanged($eventData),
             self::IssueTypeRemoved => 'Removed issue type'.self::prefixIfNotEmpty(': ', self::str($eventData, 'issue_type.name')),
             self::SubIssueAdded => 'Added sub-issue',

@@ -4,15 +4,10 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk\Data;
 
-use Illuminate\Support\Collection;
-use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Data;
 
-class ZendeskPhotoData extends Data
+class ZendeskThumbnailData extends Data
 {
-    /**
-     * @param  Collection<int, ZendeskThumbnailData>  $thumbnails
-     */
     public function __construct(
         public readonly int $id,
         public readonly string $url,
@@ -25,7 +20,5 @@ class ZendeskPhotoData extends Data
         public readonly int $height,
         public readonly bool $inline,
         public readonly bool $deleted,
-        #[DataCollectionOf(ZendeskThumbnailData::class)]
-        public readonly Collection $thumbnails = new Collection,
     ) {}
 }

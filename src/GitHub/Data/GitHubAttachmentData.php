@@ -53,42 +53,37 @@ class GitHubAttachmentData extends Data
                 continue;
             }
 
+            $altText = $alt !== '' ? $alt : null;
+            $original = [
+                'body_html' => $bodyHtml,
+                'body_plain' => $bodyPlain,
+            ];
+
             $hashMatch = [];
             $matchResult = preg_match('/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i', $authenticatedUrl, $hashMatch);
+
+            $plainUrl = null;
+            $resolvedAuthenticatedUrl = null;
+
             if ($matchResult === 1) {
                 $hash = $hashMatch[1];
+                $resolvedAuthenticatedUrl = $authenticatedUrl;
 
-                $plainUrl = null;
                 $plainMatch = [];
                 $plainMatchResult = preg_match('#https://[^\s"\']+'.preg_quote($hash, '#').'[^\s"\']*#i', $bodyPlain, $plainMatch);
                 if ($plainMatchResult === 1) {
                     $plainUrl = rtrim($plainMatch[0], '>,)');
                 }
-
-                $attachments->push(
-                    new self(
-                        plain_url: $plainUrl ?? $authenticatedUrl,
-                        authenticated_url: $authenticatedUrl,
-                        alt_text: $alt !== '' ? $alt : null,
-                        original: [
-                            'body_html' => $bodyHtml,
-                            'body_plain' => $bodyPlain,
-                        ],
-                    )
-                );
-            } else {
-                $attachments->push(
-                    new self(
-                        plain_url: $authenticatedUrl,
-                        authenticated_url: null,
-                        alt_text: $alt !== '' ? $alt : null,
-                        original: [
-                            'body_html' => $bodyHtml,
-                            'body_plain' => $bodyPlain,
-                        ],
-                    )
-                );
             }
+
+            $attachments->push(
+                new self(
+                    plain_url: $plainUrl ?? $authenticatedUrl,
+                    authenticated_url: $resolvedAuthenticatedUrl,
+                    alt_text: $altText,
+                    original: $original,
+                )
+            );
         }
 
         if ($filterUrls !== null && $filterUrls->isNotEmpty()) {

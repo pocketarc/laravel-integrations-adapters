@@ -9,6 +9,7 @@ use Github\AuthMethod;
 use Github\Client as GithubSdkClient;
 use Github\Exception\ApiLimitExceedException;
 use Github\Exception\RuntimeException;
+use Github\ResultPager;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -208,14 +209,24 @@ class GitHubClient
     public function getIssueTimeline(int $issueNumber, callable $callback): void
     {
         try {
+            $pager = new ResultPager($this->sdk, 100);
+
             /** @var list<array<string, mixed>> $timeline */
             $timeline = $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->timeline()->all($this->owner, $this->repo, $issueNumber)
+                fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
             );
 
             foreach ($timeline as $event) {
-                $eventData = GitHubEventData::createFromGitHubResponse($event);
-                $callback($eventData);
+                $callback(GitHubEventData::createFromGitHubResponse($event));
+            }
+
+            while ($pager->hasNext()) {
+                /** @var list<array<string, mixed>> $timeline */
+                $timeline = $this->executeWithRetry(fn (): array => $pager->fetchNext());
+
+                foreach ($timeline as $event) {
+                    $callback(GitHubEventData::createFromGitHubResponse($event));
+                }
             }
         } catch (RetriesExhaustedException $e) {
             throw $e;
@@ -354,7 +365,7 @@ class GitHubClient
 
                 if ($attempt < $maxRetries) {
                     $retriesMade++;
-                    $delay = $attempt;
+                    $delay = min(2 ** $attempt, 60);
                     Log::warning("GitHubClient: Connection error, retry {$attempt}/{$maxRetries} in {$delay}s: {$e->getMessage()}");
                     sleep($delay);
 
@@ -391,7 +402,7 @@ class GitHubClient
 
                 if (($isThrottled || $isRateLimited || $isServerError) && $attempt < $maxRetries) {
                     $retriesMade++;
-                    $delay = ($isThrottled || $isRateLimited) ? 30 : $attempt;
+                    $delay = min(2 ** $attempt, 60);
                     Log::warning("GitHubClient: HTTP {$statusCode} error, retry {$attempt}/{$maxRetries} in {$delay}s");
                     sleep($delay);
 

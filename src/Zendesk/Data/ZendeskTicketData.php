@@ -48,12 +48,12 @@ class ZendeskTicketData extends Data
         public readonly ZendeskViaData $via,
         #[DataCollectionOf(ZendeskCustomFieldData::class)]
         public readonly Collection $custom_fields,
-        public readonly ZendeskSatisfactionRatingData $satisfaction_rating,
         public readonly bool $has_incidents,
         public readonly bool $is_public,
         public readonly bool $allow_channelback,
         public readonly bool $allow_attachments,
         public readonly bool $from_messaging_channel,
+        public readonly ?ZendeskSatisfactionRatingData $satisfaction_rating = null,
         public readonly string $encoded_id = '',
         public readonly ?string $recipient = null,
         public readonly array|Optional $tags = [],

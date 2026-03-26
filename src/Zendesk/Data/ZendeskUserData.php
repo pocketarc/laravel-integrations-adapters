@@ -82,7 +82,8 @@ class ZendeskUserData extends Data
 
         if (isset($response['phone']) && ! is_string($response['phone'])) {
             Log::warning('ZendeskUserData: Non-string phone value received', [
-                'user_response' => $response,
+                'user_id' => $response['id'] ?? null,
+                'phone_type' => get_debug_type($response['phone']),
             ]);
             $response['phone'] = null;
         }
