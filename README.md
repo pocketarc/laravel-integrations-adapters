@@ -1,4 +1,5 @@
 # Laravel Integrations Adapters
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Adapter implementations for [`pocketarc/laravel-integrations`](https://github.com/pocketarc/laravel-integrations).

@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     init: true
     stop_grace_period: 1s
     tty: true
