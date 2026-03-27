@@ -13,6 +13,7 @@ use Github\ResultPager;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Integrations\Adapters\Concerns\RetriesRequests;
 use Integrations\Adapters\GitHub\Data\GitHubEventData;
 use Integrations\Adapters\GitHub\Enums\GitHubIssueStateReason;
 use Integrations\Exceptions\RetriesExhaustedException;
@@ -20,6 +21,8 @@ use Integrations\Models\Integration;
 
 class GitHubClient
 {
+    use RetriesRequests;
+
     private GithubSdkClient $sdk;
 
     private string $owner;
@@ -353,77 +356,29 @@ class GitHubClient
     }
 
     /**
-     * @template T
-     *
-     * @param  callable(): T  $callback
-     * @return T
-     *
-     * @throws \Throwable
+     * @return array{int, string}|null
      */
-    private function executeWithRetry(callable $callback, int $maxRetries = 3): mixed
+    protected function getRetryDelay(\Throwable $e, int $attempt): ?array
     {
-        $lastException = null;
-        $retriesMade = 0;
+        if ($e instanceof ConnectException) {
+            return [(int) min(2 ** $attempt, 60), "Connection error: {$e->getMessage()}"];
+        }
 
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-            try {
-                return $callback();
-            } catch (ConnectException $e) {
-                $lastException = $e;
+        if ($e instanceof ApiLimitExceedException) {
+            return [min(max($e->getResetTime() - time(), 1), 60), 'Rate limit exceeded'];
+        }
 
-                if ($attempt < $maxRetries) {
-                    $retriesMade++;
-                    $delay = min(2 ** $attempt, 60);
-                    Log::warning("GitHubClient: Connection error, retry {$attempt}/{$maxRetries} in {$delay}s: {$e->getMessage()}");
-                    sleep($delay);
+        if ($e instanceof RuntimeException) {
+            $statusCode = $e->getCode();
+            $isThrottled = $statusCode === 403 && str_contains($e->getMessage(), 'throttl');
+            $isRateLimited = $statusCode === 429;
+            $isServerError = $statusCode >= 500 && $statusCode < 600;
 
-                    continue;
-                }
-
-                if ($retriesMade > 0) {
-                    throw new RetriesExhaustedException($retriesMade, $e);
-                }
-                throw $e;
-            } catch (ApiLimitExceedException $e) {
-                $lastException = $e;
-
-                if ($attempt < $maxRetries) {
-                    $retriesMade++;
-                    $delay = min(max($e->getResetTime() - time(), 1), 60);
-                    Log::warning("GitHubClient: Rate limit exceeded, retry {$attempt}/{$maxRetries} in {$delay}s");
-                    sleep($delay);
-
-                    continue;
-                }
-
-                if ($retriesMade > 0) {
-                    throw new RetriesExhaustedException($retriesMade, $e);
-                }
-                throw $e;
-            } catch (RuntimeException $e) {
-                $lastException = $e;
-                $statusCode = $e->getCode();
-
-                $isThrottled = $statusCode === 403 && str_contains($e->getMessage(), 'throttl');
-                $isRateLimited = $statusCode === 429;
-                $isServerError = $statusCode >= 500 && $statusCode < 600;
-
-                if (($isThrottled || $isRateLimited || $isServerError) && $attempt < $maxRetries) {
-                    $retriesMade++;
-                    $delay = min(2 ** $attempt, 60);
-                    Log::warning("GitHubClient: HTTP {$statusCode} error, retry {$attempt}/{$maxRetries} in {$delay}s");
-                    sleep($delay);
-
-                    continue;
-                }
-
-                if ($retriesMade > 0) {
-                    throw new RetriesExhaustedException($retriesMade, $e);
-                }
-                throw $e;
+            if ($isThrottled || $isRateLimited || $isServerError) {
+                return [(int) min(2 ** $attempt, 60), "HTTP {$statusCode} error"];
             }
         }
 
-        throw $lastException ?? new RuntimeException('Retry logic exhausted without result');
+        return null;
     }
 }

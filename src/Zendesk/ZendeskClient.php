@@ -9,10 +9,10 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Integrations\Adapters\Concerns\RetriesRequests;
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
-use Integrations\Exceptions\RetriesExhaustedException;
 use Integrations\Models\Integration;
 use RuntimeException;
 use stdClass;
@@ -21,6 +21,8 @@ use Zendesk\API\HttpClient as ZendeskAPI;
 
 class ZendeskClient
 {
+    use RetriesRequests;
+
     private ZendeskAPI $sdk;
 
     private string $subdomain;
@@ -440,74 +442,27 @@ class ZendeskClient
     }
 
     /**
-     * @template T
-     *
-     * @param  callable(): T  $callback
-     * @return T
-     *
-     * @throws \Throwable
+     * @return array{int, string}|null
      */
-    private function executeWithRetry(callable $callback, int $maxRetries = 3): mixed
+    protected function getRetryDelay(\Throwable $e, int $attempt): ?array
     {
-        $lastException = null;
-        $retriesMade = 0;
-
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-            try {
-                return $callback();
-            } catch (ApiResponseException $e) {
-                $lastException = $e;
-                $statusCode = $this->getStatusCodeFromException($e);
-
-                if ($statusCode === 429 && $attempt < $maxRetries) {
-                    $retriesMade++;
-                    $delay = $this->getRetryAfterDelay($e) ?? 30;
-                    Log::warning("ZendeskClient: Rate limited (429), retry {$attempt}/{$maxRetries} in {$delay}s");
-                    sleep($delay);
-
-                    continue;
-                }
-
-                if ($statusCode !== null && $statusCode >= 500 && $statusCode < 600 && $attempt < $maxRetries) {
-                    $retriesMade++;
-                    $delay = $attempt;
-                    Log::warning("ZendeskClient: Server error ({$statusCode}), retry {$attempt}/{$maxRetries} in {$delay}s");
-                    sleep($delay);
-
-                    continue;
-                }
-
-                if ($retriesMade > 0) {
-                    throw new RetriesExhaustedException($retriesMade, $e);
-                }
-                throw $e;
-            }
+        if (! $e instanceof ApiResponseException) {
+            return null;
         }
 
-        throw $lastException ?? new RuntimeException('Retry logic exhausted without result');
-    }
+        $statusCode = $this->getStatusCodeFromException($e);
 
-    /**
-     * @template T
-     *
-     * @param  callable(): T  $callback
-     * @param  T  $default
-     * @return T
-     */
-    private function executeWithErrorHandling(callable $callback, mixed $default = null): mixed
-    {
-        try {
-            return $callback();
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
-            }
+        if ($statusCode === 429) {
+            $delay = $this->getRetryAfterDelay($e) ?? 30;
 
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-
-            return $default;
+            return [$delay, 'Rate limited (429)'];
         }
+
+        if ($statusCode !== null && $statusCode >= 500 && $statusCode < 600) {
+            return [$attempt, "Server error ({$statusCode})"];
+        }
+
+        return null;
     }
 
     private function getStatusCodeFromException(ApiResponseException $e): ?int
