@@ -13,6 +13,7 @@ use Integrations\Adapters\Concerns\RetriesRequests;
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
+use Integrations\Adapters\Zendesk\Enums\ZendeskStatus;
 use Integrations\Models\Integration;
 use RuntimeException;
 use stdClass;
@@ -392,7 +393,7 @@ class ZendeskClient
     public function closeTicket(int $ticketId): bool
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): bool {
-            $this->sdk->tickets()->update($ticketId, ['status' => 'solved']);
+            $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
 
             return true;
         }, false);
@@ -401,7 +402,7 @@ class ZendeskClient
     public function reopenTicket(int $ticketId): bool
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): bool {
-            $this->sdk->tickets()->update($ticketId, ['status' => 'open']);
+            $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
 
             return true;
         }, false);
