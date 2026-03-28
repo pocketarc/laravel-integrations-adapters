@@ -10,6 +10,7 @@ use Integrations\Adapters\GitHub\GitHubMetadata;
 use Integrations\Adapters\GitHub\GitHubProvider;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 
 class GitHubProviderTest extends TestCase
@@ -20,6 +21,7 @@ class GitHubProviderTest extends TestCase
 
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
+        $this->assertInstanceOf(HasScheduledSync::class, $provider);
     }
 
     public function test_name(): void
@@ -69,6 +71,20 @@ class GitHubProviderTest extends TestCase
         $this->assertInstanceOf(GitHubMetadata::class, $integration->metadata);
         $this->assertSame('pocketarc', $integration->metadata->owner);
         $this->assertSame('laravel-integrations', $integration->metadata->repo);
+    }
+
+    public function test_default_sync_interval(): void
+    {
+        $provider = new GitHubProvider;
+
+        $this->assertSame(5, $provider->defaultSyncInterval());
+    }
+
+    public function test_default_rate_limit(): void
+    {
+        $provider = new GitHubProvider;
+
+        $this->assertSame(60, $provider->defaultRateLimit());
     }
 
     public function test_health_check_returns_true_on_success(): void

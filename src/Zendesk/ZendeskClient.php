@@ -390,30 +390,27 @@ class ZendeskClient
         });
     }
 
-    public function closeTicket(int $ticketId): bool
+    public function closeTicket(int $ticketId): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): bool {
-            $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
+        return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
+            $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
 
-            return true;
-        }, false);
+            return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+        });
     }
 
-    public function reopenTicket(int $ticketId): bool
+    public function reopenTicket(int $ticketId): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): bool {
-            $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
+        return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
+            $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
 
-            return true;
-        }, false);
+            return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+        });
     }
 
-    /**
-     * @return stdClass|null The Zendesk API response
-     */
-    public function addComment(int $ticketId, string $comment): ?stdClass
+    public function addComment(int $ticketId, string $comment): ?ZendeskCommentData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?stdClass {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?ZendeskCommentData {
             $response = $this->sdk->tickets()->update($ticketId, [
                 'comment' => [
                     'body' => $comment,
@@ -421,16 +418,13 @@ class ZendeskClient
                 ],
             ]);
 
-            return $response instanceof stdClass ? $response : null;
+            return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
         });
     }
 
-    /**
-     * @return stdClass|null The Zendesk API response
-     */
-    public function addInternalNote(int $ticketId, string $note): ?stdClass
+    public function addInternalNote(int $ticketId, string $note): ?ZendeskCommentData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?stdClass {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?ZendeskCommentData {
             $response = $this->sdk->tickets()->update($ticketId, [
                 'comment' => [
                     'body' => $note,
@@ -438,8 +432,64 @@ class ZendeskClient
                 ],
             ]);
 
-            return $response instanceof stdClass ? $response : null;
+            return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
         });
+    }
+
+    private function commentDataFromResponse(stdClass $response): ?ZendeskCommentData
+    {
+        $audit = $response->audit ?? null;
+        if (! $audit instanceof stdClass) {
+            return null;
+        }
+
+        $events = $audit->events ?? [];
+        if (! is_array($events)) {
+            return null;
+        }
+
+        $auditId = $audit->id ?? null;
+        if (! is_int($auditId)) {
+            return null;
+        }
+
+        foreach ($events as $event) {
+            if (! $event instanceof stdClass) {
+                continue;
+            }
+            if (($event->type ?? null) !== 'Comment') {
+                continue;
+            }
+
+            $commentArray = json_decode((string) json_encode($event), true);
+            if (! is_array($commentArray)) {
+                continue;
+            }
+
+            $commentArray['audit_id'] = $auditId;
+            $commentArray = $this->normalizeViaChannel($commentArray);
+
+            return ZendeskCommentData::from($commentArray);
+        }
+
+        return null;
+    }
+
+    private function ticketDataFromResponse(stdClass $response): ?ZendeskTicketData
+    {
+        $ticket = $response->ticket ?? null;
+        if (! $ticket instanceof stdClass) {
+            return null;
+        }
+
+        $ticketArray = json_decode((string) json_encode($ticket), true);
+        if (! is_array($ticketArray)) {
+            return null;
+        }
+
+        $ticketArray = $this->normalizeViaChannel($ticketArray);
+
+        return ZendeskTicketData::from($ticketArray);
     }
 
     /**

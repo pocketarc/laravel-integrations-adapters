@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Zendesk;
 
 use Illuminate\Support\Facades\Http;
+use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
+use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
+use Integrations\Adapters\Zendesk\Events\ZendeskTicketSynced;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
 
-class ZendeskProvider implements HasHealthCheck, IntegrationProvider
+class ZendeskProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
 {
     public function name(): string
     {
@@ -52,6 +56,26 @@ class ZendeskProvider implements HasHealthCheck, IntegrationProvider
     public function metadataDataClass(): string
     {
         return ZendeskMetadata::class;
+    }
+
+    public function sync(Integration $integration): void
+    {
+        $client = new ZendeskClient($integration);
+        $since = $integration->last_synced_at ?? now()->subDay();
+
+        $client->getTicketsSince($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration): void {
+            ZendeskTicketSynced::dispatch($integration, $ticket, $user);
+        });
+    }
+
+    public function defaultSyncInterval(): int
+    {
+        return 5;
+    }
+
+    public function defaultRateLimit(): ?int
+    {
+        return 100;
     }
 
     public function healthCheck(Integration $integration): bool

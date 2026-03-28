@@ -14,7 +14,9 @@ use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Concerns\RetriesRequests;
+use Integrations\Adapters\GitHub\Data\GitHubCommentData;
 use Integrations\Adapters\GitHub\Data\GitHubEventData;
+use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Enums\GitHubIssueStateReason;
 use Integrations\Exceptions\RetriesExhaustedException;
 use Integrations\Models\Integration;
@@ -57,9 +59,8 @@ class GitHubClient
      * Create a new GitHub issue.
      *
      * @param  array<string>  $labels
-     * @return array<string, mixed>
      */
-    public function createIssue(string $title, string $body, array $labels = []): array
+    public function createIssue(string $title, string $body, array $labels = []): GitHubIssueData
     {
         try {
             $params = [
@@ -71,10 +72,12 @@ class GitHubClient
                 $params['labels'] = $labels;
             }
 
-            /** @var array<string, mixed> */
-            return $this->executeWithRetry(
+            /** @var array<string, mixed> $response */
+            $response = $this->executeWithRetry(
                 fn (): array => $this->getIssueApi()->create($this->owner, $this->repo, $params)
             );
+
+            return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
             if (str_contains($e->getMessage(), 'permission to create labels') && $labels !== []) {
                 $labelList = implode(', ', array_map(fn (string $l): string => "\"{$l}\"", $labels));
@@ -281,7 +284,7 @@ class GitHubClient
         }
     }
 
-    public function closeIssue(int $issueNumber, ?GitHubIssueStateReason $stateReason = null): bool
+    public function closeIssue(int $issueNumber, ?GitHubIssueStateReason $stateReason = null): ?GitHubIssueData
     {
         if ($stateReason === GitHubIssueStateReason::Reopened) {
             throw new \DomainException('Cannot close an issue with state_reason "reopened".');
@@ -294,49 +297,50 @@ class GitHubClient
                 $params['state_reason'] = $stateReason->value;
             }
 
-            $this->executeWithRetry(
+            /** @var array<string, mixed> $response */
+            $response = $this->executeWithRetry(
                 fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, $params)
             );
 
-            return true;
+            return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
             report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
 
-            return false;
+            return null;
         }
     }
 
-    public function reopenIssue(int $issueNumber): bool
+    public function reopenIssue(int $issueNumber): ?GitHubIssueData
     {
         try {
-            $this->executeWithRetry(
+            /** @var array<string, mixed> $response */
+            $response = $this->executeWithRetry(
                 fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, ['state' => 'open'])
             );
 
-            return true;
+            return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
             report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
 
-            return false;
+            return null;
         }
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function addComment(int $issueNumber, string $comment): ?array
+    public function addComment(int $issueNumber, string $comment): ?GitHubCommentData
     {
         try {
-            /** @var array<string, mixed> */
-            return $this->executeWithRetry(
+            /** @var array<string, mixed> $response */
+            $response = $this->executeWithRetry(
                 fn (): array => $this->getIssueApi()->comments()->create($this->owner, $this->repo, $issueNumber, ['body' => $comment])
             );
+
+            return GitHubCommentData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
             report($e);
             if (config('app.debug') === true) {
