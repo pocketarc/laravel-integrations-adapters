@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Integrations\Adapters\GitHub;
 
 use Illuminate\Support\Facades\Http;
+use Integrations\Adapters\GitHub\Data\GitHubIssueData;
+use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
 
-class GitHubProvider implements HasHealthCheck, IntegrationProvider
+class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
 {
     public function name(): string
     {
@@ -51,6 +54,27 @@ class GitHubProvider implements HasHealthCheck, IntegrationProvider
     public function metadataDataClass(): string
     {
         return GitHubMetadata::class;
+    }
+
+    public function sync(Integration $integration): void
+    {
+        $client = new GitHubClient($integration);
+        $since = $integration->last_synced_at ?? now()->subDay();
+
+        $client->getIssuesSince($since, function (array $issue) use ($integration): void {
+            $issueData = GitHubIssueData::createFromGitHubResponse($issue);
+            GitHubIssueSynced::dispatch($integration, $issueData);
+        });
+    }
+
+    public function defaultSyncInterval(): int
+    {
+        return 5;
+    }
+
+    public function defaultRateLimit(): ?int
+    {
+        return 60;
     }
 
     public function healthCheck(Integration $integration): bool

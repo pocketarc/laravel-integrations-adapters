@@ -10,6 +10,7 @@ use Integrations\Adapters\Zendesk\ZendeskCredentials;
 use Integrations\Adapters\Zendesk\ZendeskMetadata;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 
 class ZendeskProviderTest extends TestCase
@@ -20,6 +21,7 @@ class ZendeskProviderTest extends TestCase
 
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
+        $this->assertInstanceOf(HasScheduledSync::class, $provider);
     }
 
     public function test_name(): void
@@ -71,6 +73,20 @@ class ZendeskProviderTest extends TestCase
         $this->assertInstanceOf(ZendeskMetadata::class, $integration->metadata);
         $this->assertSame('acme', $integration->metadata->subdomain);
         $this->assertNull($integration->metadata->custom_domain);
+    }
+
+    public function test_default_sync_interval(): void
+    {
+        $provider = new ZendeskProvider;
+
+        $this->assertSame(5, $provider->defaultSyncInterval());
+    }
+
+    public function test_default_rate_limit(): void
+    {
+        $provider = new ZendeskProvider;
+
+        $this->assertSame(100, $provider->defaultRateLimit());
     }
 
     public function test_health_check_returns_true_on_success(): void
