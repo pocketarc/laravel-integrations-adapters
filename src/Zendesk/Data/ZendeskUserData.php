@@ -7,13 +7,13 @@ namespace Integrations\Adapters\Zendesk\Data;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Spatie\LaravelData\Data;
-use Spatie\LaravelData\Optional;
 
 class ZendeskUserData extends Data
 {
     /**
-     * @param  array<int, string>  $tags
-     * @param  array<string, mixed>  $user_fields
+     * @param  array<int, string>|null  $tags
+     * @param  array<string, mixed>|null  $user_fields
+     * @param  array<string, mixed>|null  $original
      */
     public function __construct(
         public readonly int $id,
@@ -47,12 +47,13 @@ class ZendeskUserData extends Data
         public readonly bool $shared,
         public readonly bool $shared_agent,
         public readonly bool $report_csv,
-        public readonly string|null|Optional $alias = '',
-        public readonly string|null|Optional $signature = '',
-        public readonly string|null|Optional $details = '',
-        public readonly string|null|Optional $notes = '',
-        public readonly array|Optional $tags = [],
-        public readonly array|Optional $user_fields = [],
+        public readonly ?string $alias = '',
+        public readonly ?string $signature = '',
+        public readonly ?string $details = '',
+        public readonly ?string $notes = '',
+        public readonly ?array $tags = [],
+        public readonly ?array $user_fields = [],
+        public readonly ?array $original = null,
     ) {}
 
     /**
@@ -74,6 +75,8 @@ class ZendeskUserData extends Data
             }
         }
 
+        $original = $response;
+
         $email = $response['email'] ?? null;
         if ($email === null || $email === '') {
             $id = $response['id'] ?? 0;
@@ -87,6 +90,8 @@ class ZendeskUserData extends Data
             ]);
             $response['phone'] = null;
         }
+
+        $response['original'] = $original;
 
         return self::from($response);
     }

@@ -25,6 +25,8 @@ class GitHubClient
 {
     use RetriesRequests;
 
+    private Integration $integration;
+
     private GithubSdkClient $sdk;
 
     private string $owner;
@@ -33,7 +35,7 @@ class GitHubClient
 
     private string $token;
 
-    public function __construct(Integration $integration)
+    public function __construct(Integration $integration, ?GithubSdkClient $sdk = null)
     {
         $credentials = $integration->credentials;
         $metadata = $integration->metadata;
@@ -42,12 +44,15 @@ class GitHubClient
             throw new \RuntimeException('Invalid GitHub integration: credentials or metadata type mismatch.');
         }
 
+        $this->integration = $integration;
         $this->owner = $metadata->owner;
         $this->repo = $metadata->repo;
         $this->token = $credentials->token;
 
-        $this->sdk = new GithubSdkClient;
-        $this->sdk->authenticate($this->token, null, AuthMethod::ACCESS_TOKEN);
+        $this->sdk = $sdk ?? new GithubSdkClient;
+        if ($sdk === null) {
+            $this->sdk->authenticate($this->token, null, AuthMethod::ACCESS_TOKEN);
+        }
     }
 
     public function getSdkClient(): GithubSdkClient
@@ -73,8 +78,13 @@ class GitHubClient
             }
 
             /** @var array<string, mixed> $response */
-            $response = $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->create($this->owner, $this->repo, $params)
+            $response = $this->integration->request(
+                endpoint: "repos/{$this->owner}/{$this->repo}/issues",
+                method: 'POST',
+                callback: fn () => $this->executeWithRetry(
+                    fn (): array => $this->getIssueApi()->create($this->owner, $this->repo, $params)
+                ),
+                requestData: $params,
             );
 
             return GitHubIssueData::createFromGitHubResponse($response);
@@ -88,7 +98,6 @@ class GitHubClient
                     $e
                 );
             }
-            report($e);
             throw $e;
         }
     }
@@ -100,11 +109,14 @@ class GitHubClient
     {
         try {
             /** @var array<string, mixed> */
-            return $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->show($this->owner, $this->repo, $issueNumber)
+            return $this->integration->request(
+                endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}",
+                method: 'GET',
+                callback: fn () => $this->executeWithRetry(
+                    fn (): array => $this->getIssueApi()->show($this->owner, $this->repo, $issueNumber)
+                ),
             );
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -126,20 +138,25 @@ class GitHubClient
 
             do {
                 /** @var list<array<string, mixed>> $issues */
-                $issues = $this->executeWithRetry(fn (): array => $this->getIssueApi()
-                    ->configure('full')
-                    ->all(
-                        $this->owner,
-                        $this->repo,
-                        [
-                            'state' => 'all',
-                            'since' => $since->format('c'),
-                            'sort' => 'updated',
-                            'direction' => 'desc',
-                            'per_page' => $perPage,
-                            'page' => $page,
-                        ]
-                    ));
+                $issues = $this->integration->request(
+                    endpoint: "repos/{$this->owner}/{$this->repo}/issues?page={$page}",
+                    method: 'GET',
+                    callback: fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()
+                        ->configure('full')
+                        ->all(
+                            $this->owner,
+                            $this->repo,
+                            [
+                                'state' => 'all',
+                                'since' => $since->format('c'),
+                                'sort' => 'updated',
+                                'direction' => 'desc',
+                                'per_page' => $perPage,
+                                'page' => $page,
+                            ]
+                        )),
+                    requestData: ['since' => $since->format('c'), 'page' => $page],
+                );
 
                 if ($issues === []) {
                     break;
@@ -158,7 +175,6 @@ class GitHubClient
         } catch (RetriesExhaustedException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -178,17 +194,22 @@ class GitHubClient
 
             do {
                 /** @var list<array<string, mixed>> $comments */
-                $comments = $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
-                    ->configure('full')
-                    ->all(
-                        $this->owner,
-                        $this->repo,
-                        $issueNumber,
-                        [
-                            'per_page' => $perPage,
-                            'page' => $page,
-                        ]
-                    ));
+                $comments = $this->integration->request(
+                    endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}",
+                    method: 'GET',
+                    callback: fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
+                        ->configure('full')
+                        ->all(
+                            $this->owner,
+                            $this->repo,
+                            $issueNumber,
+                            [
+                                'per_page' => $perPage,
+                                'page' => $page,
+                            ]
+                        )),
+                    requestData: ['issue_number' => $issueNumber, 'page' => $page],
+                );
 
                 if ($comments === []) {
                     break;
@@ -203,7 +224,6 @@ class GitHubClient
         } catch (RetriesExhaustedException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -219,10 +239,16 @@ class GitHubClient
     {
         try {
             $pager = new ResultPager($this->sdk, 100);
+            $page = 1;
 
             /** @var list<array<string, mixed>> $timeline */
-            $timeline = $this->executeWithRetry(
-                fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
+            $timeline = $this->integration->request(
+                endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}",
+                method: 'GET',
+                callback: fn () => $this->executeWithRetry(
+                    fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
+                ),
+                requestData: ['issue_number' => $issueNumber, 'page' => $page],
             );
 
             foreach ($timeline as $event) {
@@ -230,8 +256,15 @@ class GitHubClient
             }
 
             while ($pager->hasNext()) {
+                $page++;
+
                 /** @var list<array<string, mixed>> $timeline */
-                $timeline = $this->executeWithRetry(fn (): array => $pager->fetchNext());
+                $timeline = $this->integration->request(
+                    endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}",
+                    method: 'GET',
+                    callback: fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()),
+                    requestData: ['issue_number' => $issueNumber, 'page' => $page],
+                );
 
                 foreach ($timeline as $event) {
                     $callback(GitHubEventData::createFromGitHubResponse($event));
@@ -240,7 +273,6 @@ class GitHubClient
         } catch (RetriesExhaustedException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -267,12 +299,16 @@ class GitHubClient
                 ];
             }
 
-            $response = Http::timeout(120)
-                ->withHeaders($headers)
-                ->throw()
-                ->get($url);
+            $result = $this->integration->request(
+                endpoint: $url,
+                method: 'GET',
+                callback: fn () => Http::timeout(120)
+                    ->withHeaders($headers)
+                    ->throw()
+                    ->get($url),
+            );
 
-            return $response->body();
+            return is_string($result) ? $result : null;
         } catch (\Throwable $e) {
             Log::error("GitHubClient: Error downloading asset from {$url}: ".$e->getMessage());
 
@@ -298,13 +334,17 @@ class GitHubClient
             }
 
             /** @var array<string, mixed> $response */
-            $response = $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, $params)
+            $response = $this->integration->request(
+                endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}",
+                method: 'PATCH',
+                callback: fn () => $this->executeWithRetry(
+                    fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, $params)
+                ),
+                requestData: $params,
             );
 
             return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -317,13 +357,17 @@ class GitHubClient
     {
         try {
             /** @var array<string, mixed> $response */
-            $response = $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, ['state' => 'open'])
+            $response = $this->integration->request(
+                endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}",
+                method: 'PATCH',
+                callback: fn () => $this->executeWithRetry(
+                    fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, ['state' => 'open'])
+                ),
+                requestData: ['state' => 'open'],
             );
 
             return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -336,13 +380,17 @@ class GitHubClient
     {
         try {
             /** @var array<string, mixed> $response */
-            $response = $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->comments()->create($this->owner, $this->repo, $issueNumber, ['body' => $comment])
+            $response = $this->integration->request(
+                endpoint: "repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments",
+                method: 'POST',
+                callback: fn () => $this->executeWithRetry(
+                    fn (): array => $this->getIssueApi()->comments()->create($this->owner, $this->repo, $issueNumber, ['body' => $comment])
+                ),
+                requestData: ['body' => $comment],
             );
 
             return GitHubCommentData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
-            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }

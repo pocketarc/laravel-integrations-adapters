@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\GitHub;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
+use Integrations\Adapters\GitHub\Events\GitHubIssueSyncFailed;
+use Integrations\Adapters\GitHub\Events\GitHubSyncCompleted;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
+use Integrations\Sync\SyncResult;
 
 class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
 {
@@ -56,15 +61,40 @@ class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationPro
         return GitHubMetadata::class;
     }
 
-    public function sync(Integration $integration): void
+    public function sync(Integration $integration): SyncResult
     {
         $client = new GitHubClient($integration);
         $since = $integration->last_synced_at ?? now()->subDay();
 
-        $client->getIssuesSince($since, function (array $issue) use ($integration): void {
-            $issueData = GitHubIssueData::createFromGitHubResponse($issue);
-            GitHubIssueSynced::dispatch($integration, $issueData);
+        $successCount = 0;
+        $failureCount = 0;
+        $earliestFailureAt = null;
+
+        $client->getIssuesSince($since, function (array $issue) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+            try {
+                $issueData = GitHubIssueData::createFromGitHubResponse($issue);
+                GitHubIssueSynced::dispatch($integration, $issueData);
+                $successCount++;
+            } catch (\Throwable $e) {
+                $failureCount++;
+                $updatedAt = isset($issue['updated_at']) && is_string($issue['updated_at']) ? Carbon::parse($issue['updated_at']) : null;
+                if ($updatedAt !== null && ($earliestFailureAt === null || $updatedAt->isBefore($earliestFailureAt))) {
+                    $earliestFailureAt = $updatedAt;
+                }
+
+                Log::error('GitHubProvider: Failed processing issue: '.$e->getMessage(), [
+                    'issue_number' => $issue['number'] ?? 'unknown',
+                ]);
+                GitHubIssueSyncFailed::dispatch($integration, $issue, $e);
+            }
         });
+
+        $safeSyncedAt = $earliestFailureAt ?? now();
+
+        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt);
+        GitHubSyncCompleted::dispatch($integration, $result);
+
+        return $result;
     }
 
     public function defaultSyncInterval(): int

@@ -14,6 +14,7 @@ class ZendeskCommentData extends Data
     /**
      * @param  Collection<int, ZendeskAttachmentData>  $attachments
      * @param  array<string, mixed>  $metadata
+     * @param  array<string, mixed>|null  $original
      */
     public function __construct(
         public readonly int $id,
@@ -29,6 +30,7 @@ class ZendeskCommentData extends Data
         public readonly ZendeskViaData $via,
         public readonly Carbon $created_at,
         public readonly array $metadata = [],
+        public readonly ?array $original = null,
     ) {}
 
     public function hasAttachments(): bool

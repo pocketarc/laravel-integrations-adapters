@@ -15,7 +15,7 @@
         "php": "^8.3",
         "knplabs/github-api": "^3.16",
         "php-http/guzzle7-adapter": "^1.0",
-        "pocketarc/laravel-integrations": "^1.0",
+        "pocketarc/laravel-integrations": "^1.1",
         "spatie/laravel-data": "^4.0",
         "zendesk/zendesk_api_client_php": "^4.1"
     },
@@ -24,6 +24,7 @@
         "larastan/larastan": "^3",
         "laravel/pint": "^1.24",
         "orchestra/testbench": "^10.0|^11.0",
+        "php-http/mock-client": "^1.6",
         "phpstan/phpstan-strict-rules": "^2.0",
         "phpunit/phpunit": "^12.0"
     },

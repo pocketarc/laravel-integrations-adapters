@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
+use Integrations\Adapters\Zendesk\Events\ZendeskSyncCompleted;
 use Integrations\Adapters\Zendesk\Events\ZendeskTicketSynced;
+use Integrations\Adapters\Zendesk\Events\ZendeskTicketSyncFailed;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
+use Integrations\Sync\SyncResult;
 
 class ZendeskProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
 {
@@ -58,14 +63,39 @@ class ZendeskProvider implements HasHealthCheck, HasScheduledSync, IntegrationPr
         return ZendeskMetadata::class;
     }
 
-    public function sync(Integration $integration): void
+    public function sync(Integration $integration): SyncResult
     {
         $client = new ZendeskClient($integration);
         $since = $integration->last_synced_at ?? now()->subDay();
 
-        $client->getTicketsSince($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration): void {
-            ZendeskTicketSynced::dispatch($integration, $ticket, $user);
+        $successCount = 0;
+        $failureCount = 0;
+        $earliestFailureAt = null;
+
+        $client->getTicketsSince($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+            try {
+                ZendeskTicketSynced::dispatch($integration, $ticket, $user);
+                $successCount++;
+            } catch (\Throwable $e) {
+                $failureCount++;
+                $updatedAt = Carbon::parse($ticket->updated_at);
+                if ($earliestFailureAt === null || $updatedAt->isBefore($earliestFailureAt)) {
+                    $earliestFailureAt = $updatedAt;
+                }
+
+                Log::error('ZendeskProvider: Failed processing ticket: '.$e->getMessage(), [
+                    'ticket_id' => $ticket->id,
+                ]);
+                ZendeskTicketSyncFailed::dispatch($integration, (string) $ticket->id, $e);
+            }
         });
+
+        $safeSyncedAt = $earliestFailureAt ?? now();
+
+        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt);
+        ZendeskSyncCompleted::dispatch($integration, $result);
+
+        return $result;
     }
 
     public function defaultSyncInterval(): int
