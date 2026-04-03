@@ -18,7 +18,6 @@ use Integrations\Adapters\GitHub\Data\GitHubCommentData;
 use Integrations\Adapters\GitHub\Data\GitHubEventData;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Enums\GitHubIssueStateReason;
-use Integrations\Exceptions\RetriesExhaustedException;
 use Integrations\Models\Integration;
 
 class GitHubClient
@@ -133,35 +132,24 @@ class GitHubClient
         $perPage = 100;
 
         do {
-            try {
-                /** @var list<array<string, mixed>> $issues */
-                $issues = $this->integration
-                    ->to("repos/{$this->owner}/{$this->repo}/issues?page={$page}")
-                    ->withData(['since' => $since->format('c'), 'page' => $page])
-                    ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()
-                        ->configure('full')
-                        ->all(
-                            $this->owner,
-                            $this->repo,
-                            [
-                                'state' => 'all',
-                                'since' => $since->format('c'),
-                                'sort' => 'updated',
-                                'direction' => 'desc',
-                                'per_page' => $perPage,
-                                'page' => $page,
-                            ]
-                        )));
-            } catch (RetriesExhaustedException $e) {
-                throw $e;
-            } catch (\Throwable $e) {
-                report($e);
-                if (config('app.debug') === true) {
-                    throw $e;
-                }
-
-                return;
-            }
+            /** @var list<array<string, mixed>> $issues */
+            $issues = $this->integration
+                ->to("repos/{$this->owner}/{$this->repo}/issues?page={$page}")
+                ->withData(['since' => $since->format('c'), 'page' => $page])
+                ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()
+                    ->configure('full')
+                    ->all(
+                        $this->owner,
+                        $this->repo,
+                        [
+                            'state' => 'all',
+                            'since' => $since->format('c'),
+                            'sort' => 'updated',
+                            'direction' => 'desc',
+                            'per_page' => $perPage,
+                            'page' => $page,
+                        ]
+                    )));
 
             if ($issues === []) {
                 break;
@@ -190,32 +178,21 @@ class GitHubClient
         $perPage = 100;
 
         do {
-            try {
-                /** @var list<array<string, mixed>> $comments */
-                $comments = $this->integration
-                    ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}")
-                    ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                    ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
-                        ->configure('full')
-                        ->all(
-                            $this->owner,
-                            $this->repo,
-                            $issueNumber,
-                            [
-                                'per_page' => $perPage,
-                                'page' => $page,
-                            ]
-                        )));
-            } catch (RetriesExhaustedException $e) {
-                throw $e;
-            } catch (\Throwable $e) {
-                report($e);
-                if (config('app.debug') === true) {
-                    throw $e;
-                }
-
-                return;
-            }
+            /** @var list<array<string, mixed>> $comments */
+            $comments = $this->integration
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}")
+                ->withData(['issue_number' => $issueNumber, 'page' => $page])
+                ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
+                    ->configure('full')
+                    ->all(
+                        $this->owner,
+                        $this->repo,
+                        $issueNumber,
+                        [
+                            'per_page' => $perPage,
+                            'page' => $page,
+                        ]
+                    )));
 
             if ($comments === []) {
                 break;
@@ -239,24 +216,13 @@ class GitHubClient
         $pager = new ResultPager($this->sdk, 100);
         $page = 1;
 
-        try {
-            /** @var list<array<string, mixed>> $timeline */
-            $timeline = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
-                ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                ->get(fn () => $this->executeWithRetry(
-                    fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
-                ));
-        } catch (RetriesExhaustedException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            report($e);
-            if (config('app.debug') === true) {
-                throw $e;
-            }
-
-            return;
-        }
+        /** @var list<array<string, mixed>> $timeline */
+        $timeline = $this->integration
+            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
+            ->withData(['issue_number' => $issueNumber, 'page' => $page])
+            ->get(fn () => $this->executeWithRetry(
+                fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
+            ));
 
         foreach ($timeline as $event) {
             $callback(GitHubEventData::createFromGitHubResponse($event));
@@ -265,22 +231,11 @@ class GitHubClient
         while ($pager->hasNext()) {
             $page++;
 
-            try {
-                /** @var list<array<string, mixed>> $timeline */
-                $timeline = $this->integration
-                    ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
-                    ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                    ->get(fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()));
-            } catch (RetriesExhaustedException $e) {
-                throw $e;
-            } catch (\Throwable $e) {
-                report($e);
-                if (config('app.debug') === true) {
-                    throw $e;
-                }
-
-                return;
-            }
+            /** @var list<array<string, mixed>> $timeline */
+            $timeline = $this->integration
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
+                ->withData(['issue_number' => $issueNumber, 'page' => $page])
+                ->get(fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()));
 
             foreach ($timeline as $event) {
                 $callback(GitHubEventData::createFromGitHubResponse($event));

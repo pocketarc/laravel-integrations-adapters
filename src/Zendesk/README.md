@@ -20,12 +20,12 @@ $integration = Integration::create([
 ]);
 ```
 
-| Credentials                            | Metadata                                                       |
-|----------------------------------------|----------------------------------------------------------------|
-| `email` (string) - Zendesk admin email | `subdomain` (string) - Zendesk subdomain                       |
-| `token` (string) - API token           | `custom_domain` (?string) - optional custom help center domain |
+| Credentials                            | Metadata                                                                                    |
+|----------------------------------------|---------------------------------------------------------------------------------------------|
+| `email` (string) - Zendesk admin email | `subdomain` (string) - Zendesk subdomain                                                    |
+| `token` (string) - API token           | `custom_domain` (?string) - full base URL including scheme, e.g. `https://support.acme.com` |
 
-The health check uses `custom_domain` if set, otherwise falls back to `https://{subdomain}.zendesk.com`.
+The health check appends `/api/v2/users/me.json` to `custom_domain` if set, otherwise uses `https://{subdomain}.zendesk.com`.
 
 ## Client methods
 
