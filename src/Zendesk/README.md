@@ -38,7 +38,7 @@ $client = new ZendeskClient($integration);
 | `getTickets($callback)`                           | Iterate all tickets via the SDK iterator.                                                                      |
 | `getTicketsSince($since, $callback)`              | Incremental ticket export with sideloaded users. Callback receives `ZendeskTicketData` and `?ZendeskUserData`. |
 | `getTicketsNewerThan($minId, $callback)`          | Fetch tickets with ID > `$minId` via Search API. For catching missed items.                                    |
-| `getUsers($callback)`                             | Iterate all users. Returns a `Collection<ZendeskUserData>`.                                                    |
+| `getUsers($callback?)`                            | Iterate all users. Optional callback receives each `ZendeskUserData`. Returns `Collection<ZendeskUserData>`.   |
 | `getTicketComments($ticketId, $callback)`         | Iterate comments on a ticket (cursor-paginated).                                                               |
 | `getTicket($ticketId)`                            | Get a single ticket.                                                                                           |
 | `getUser($userId)`                                | Get a single user.                                                                                             |
@@ -61,7 +61,7 @@ First sync (null cursor) fetches all tickets from the beginning of time. Set `sy
 $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 ```
 
-Subsequent syncs subtract a 1-hour buffer from the cursor to catch items updated between syncs. Consumers should use `updateOrCreate()` in their event listeners since overlap is expected.
+Every sync (including the first one with a seeded cursor) subtracts a 1-hour buffer from the cursor. This buffer catches items updated between syncs. Consumers should use `updateOrCreate()` in their event listeners since overlap is expected.
 
 Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 

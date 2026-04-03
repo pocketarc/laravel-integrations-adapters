@@ -55,7 +55,7 @@ First sync (null cursor) fetches all issues from the beginning of time. Set `syn
 $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 ```
 
-Subsequent syncs subtract a 1-hour buffer from the cursor to catch items updated between syncs. Consumers should use `updateOrCreate()` in their event listeners since overlap is expected.
+Every sync (including the first one with a seeded cursor) subtracts a 1-hour buffer from the cursor. This buffer catches items updated between syncs. Consumers should use `updateOrCreate()` in their event listeners since overlap is expected.
 
 Defaults: 5-minute sync interval, 60 requests/minute rate limit.
 

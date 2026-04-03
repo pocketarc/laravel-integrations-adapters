@@ -18,6 +18,7 @@ use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
 use Integrations\Sync\SyncResult;
+use InvalidArgumentException;
 
 class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
@@ -71,6 +72,10 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
 
     public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
     {
+        if ($cursor !== null && ! is_string($cursor)) {
+            throw new InvalidArgumentException('ZendeskProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
+        }
+
         $client = new ZendeskClient($integration);
         $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
 
@@ -84,9 +89,8 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
                 $successCount++;
             } catch (\Throwable $e) {
                 $failureCount++;
-                $updatedAt = Carbon::parse($ticket->updated_at);
-                if ($earliestFailureAt === null || $updatedAt->isBefore($earliestFailureAt)) {
-                    $earliestFailureAt = $updatedAt;
+                if ($earliestFailureAt === null || $ticket->updated_at->isBefore($earliestFailureAt)) {
+                    $earliestFailureAt = $ticket->updated_at;
                 }
 
                 Log::error('ZendeskProvider: Failed processing ticket: '.$e->getMessage(), [

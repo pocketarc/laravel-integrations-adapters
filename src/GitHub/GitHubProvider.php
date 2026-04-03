@@ -17,6 +17,7 @@ use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
 use Integrations\Sync\SyncResult;
+use InvalidArgumentException;
 
 class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
@@ -69,6 +70,10 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
 
     public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
     {
+        if ($cursor !== null && ! is_string($cursor)) {
+            throw new InvalidArgumentException('GitHubProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
+        }
+
         $client = new GitHubClient($integration);
         $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
 

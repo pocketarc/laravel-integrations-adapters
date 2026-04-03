@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk\Data;
 
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Spatie\LaravelData\Data;
 

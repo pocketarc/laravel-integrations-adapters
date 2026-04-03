@@ -163,7 +163,6 @@ class GitHubClientTest extends TestCase
             ['id' => 1, 'number' => 1, 'title' => 'Issue', 'state' => 'open'],
             ['id' => 2, 'number' => 2, 'title' => 'PR', 'state' => 'open', 'pull_request' => ['url' => 'https://...']],
         ]));
-        $mockHttp->addResponse($this->jsonResponse([]));
 
         $client = $this->createClient($mockHttp);
         $issues = [];
