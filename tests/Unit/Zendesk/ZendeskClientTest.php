@@ -32,9 +32,9 @@ class ZendeskClientTest extends TestCase
     private function createMockSdk(MockHandler $mockHandler): ZendeskAPI
     {
         $handlerStack = HandlerStack::create($mockHandler);
-        $guzzle = new GuzzleClient(['handler' => $handlerStack]);
-        $sdk = new ZendeskAPI('acme', '', 'https', 'zendesk.com', 443, $guzzle);
+        $sdk = new ZendeskAPI('acme');
         $sdk->setAuth('basic', ['username' => 'test@acme.com', 'token' => 'fake-token']);
+        $sdk->guzzle = new GuzzleClient(['handler' => $handlerStack]);
 
         return $sdk;
     }

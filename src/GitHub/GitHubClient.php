@@ -113,6 +113,7 @@ class GitHubClient
                     fn (): array => $this->getIssueApi()->show($this->owner, $this->repo, $issueNumber)
                 ));
         } catch (\Throwable $e) {
+            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -128,11 +129,11 @@ class GitHubClient
      */
     public function getIssuesSince(\DateTimeInterface $since, callable $callback): void
     {
-        try {
-            $page = 1;
-            $perPage = 100;
+        $page = 1;
+        $perPage = 100;
 
-            do {
+        do {
+            try {
                 /** @var list<array<string, mixed>> $issues */
                 $issues = $this->integration
                     ->to("repos/{$this->owner}/{$this->repo}/issues?page={$page}")
@@ -151,28 +152,31 @@ class GitHubClient
                                 'page' => $page,
                             ]
                         )));
-
-                if ($issues === []) {
-                    break;
-                }
-
-                foreach ($issues as $issue) {
-                    if (isset($issue['pull_request'])) {
-                        continue;
-                    }
-
-                    $callback($issue);
-                }
-
-                $page++;
-            } while (count($issues) === $perPage);
-        } catch (RetriesExhaustedException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
+            } catch (RetriesExhaustedException $e) {
                 throw $e;
+            } catch (\Throwable $e) {
+                report($e);
+                if (config('app.debug') === true) {
+                    throw $e;
+                }
+
+                return;
             }
-        }
+
+            if ($issues === []) {
+                break;
+            }
+
+            foreach ($issues as $issue) {
+                if (isset($issue['pull_request'])) {
+                    continue;
+                }
+
+                $callback($issue);
+            }
+
+            $page++;
+        } while (count($issues) === $perPage);
     }
 
     /**
@@ -182,11 +186,11 @@ class GitHubClient
      */
     public function getIssueComments(int $issueNumber, callable $callback): void
     {
-        try {
-            $page = 1;
-            $perPage = 100;
+        $page = 1;
+        $perPage = 100;
 
-            do {
+        do {
+            try {
                 /** @var list<array<string, mixed>> $comments */
                 $comments = $this->integration
                     ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}")
@@ -202,24 +206,27 @@ class GitHubClient
                                 'page' => $page,
                             ]
                         )));
-
-                if ($comments === []) {
-                    break;
-                }
-
-                foreach ($comments as $comment) {
-                    $callback($comment);
-                }
-
-                $page++;
-            } while (count($comments) === $perPage);
-        } catch (RetriesExhaustedException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
+            } catch (RetriesExhaustedException $e) {
                 throw $e;
+            } catch (\Throwable $e) {
+                report($e);
+                if (config('app.debug') === true) {
+                    throw $e;
+                }
+
+                return;
             }
-        }
+
+            if ($comments === []) {
+                break;
+            }
+
+            foreach ($comments as $comment) {
+                $callback($comment);
+            }
+
+            $page++;
+        } while (count($comments) === $perPage);
     }
 
     /**
@@ -229,10 +236,10 @@ class GitHubClient
      */
     public function getIssueTimeline(int $issueNumber, callable $callback): void
     {
-        try {
-            $pager = new ResultPager($this->sdk, 100);
-            $page = 1;
+        $pager = new ResultPager($this->sdk, 100);
+        $page = 1;
 
+        try {
             /** @var list<array<string, mixed>> $timeline */
             $timeline = $this->integration
                 ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
@@ -240,29 +247,43 @@ class GitHubClient
                 ->get(fn () => $this->executeWithRetry(
                     fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
                 ));
-
-            foreach ($timeline as $event) {
-                $callback(GitHubEventData::createFromGitHubResponse($event));
+        } catch (RetriesExhaustedException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            if (config('app.debug') === true) {
+                throw $e;
             }
 
-            while ($pager->hasNext()) {
-                $page++;
+            return;
+        }
 
+        foreach ($timeline as $event) {
+            $callback(GitHubEventData::createFromGitHubResponse($event));
+        }
+
+        while ($pager->hasNext()) {
+            $page++;
+
+            try {
                 /** @var list<array<string, mixed>> $timeline */
                 $timeline = $this->integration
                     ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
                     ->withData(['issue_number' => $issueNumber, 'page' => $page])
                     ->get(fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()));
-
-                foreach ($timeline as $event) {
-                    $callback(GitHubEventData::createFromGitHubResponse($event));
-                }
-            }
-        } catch (RetriesExhaustedException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
+            } catch (RetriesExhaustedException $e) {
                 throw $e;
+            } catch (\Throwable $e) {
+                report($e);
+                if (config('app.debug') === true) {
+                    throw $e;
+                }
+
+                return;
+            }
+
+            foreach ($timeline as $event) {
+                $callback(GitHubEventData::createFromGitHubResponse($event));
             }
         }
     }
@@ -292,10 +313,12 @@ class GitHubClient
                 ->get(fn () => Http::timeout(120)
                     ->withHeaders($headers)
                     ->throw()
-                    ->get($url));
+                    ->get($url)
+                    ->body());
 
             return is_string($result) ? $result : null;
         } catch (\Throwable $e) {
+            report($e);
             Log::error("GitHubClient: Error downloading asset from {$url}: ".$e->getMessage());
 
             if (config('app.debug') === true) {
@@ -329,6 +352,7 @@ class GitHubClient
 
             return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
+            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -350,6 +374,7 @@ class GitHubClient
 
             return GitHubIssueData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
+            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }
@@ -371,6 +396,7 @@ class GitHubClient
 
             return GitHubCommentData::createFromGitHubResponse($response);
         } catch (\Throwable $e) {
+            report($e);
             if (config('app.debug') === true) {
                 throw $e;
             }

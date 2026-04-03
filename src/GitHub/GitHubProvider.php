@@ -97,7 +97,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
 
         $safeSyncedAt = $earliestFailureAt ?? now();
 
-        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, $safeSyncedAt->toIso8601String());
+        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         GitHubSyncCompleted::dispatch($integration, $result);
 
         return $result;

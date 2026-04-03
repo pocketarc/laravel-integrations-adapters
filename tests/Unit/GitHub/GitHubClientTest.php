@@ -111,15 +111,39 @@ class GitHubClientTest extends TestCase
         $this->assertSame(42, $result['number']);
     }
 
-    public function test_get_issues_since_calls_callback_per_issue(): void
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function generateIssues(int $count, int $startId = 1): array
+    {
+        return array_map(fn (int $i) => [
+            'id' => $startId + $i,
+            'number' => $startId + $i,
+            'title' => 'Issue '.($startId + $i),
+            'state' => 'open',
+        ], range(0, $count - 1));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function generateComments(int $count, int $startId = 100): array
+    {
+        return array_map(fn (int $i) => [
+            'id' => $startId + $i,
+            'body' => 'Comment '.($startId + $i),
+            'body_html' => '<p>Comment '.($startId + $i).'</p>',
+            'user' => ['id' => 1, 'login' => 'user1'],
+            'created_at' => '2026-01-01T00:00:00Z',
+            'updated_at' => '2026-01-01T00:00:00Z',
+        ], range(0, $count - 1));
+    }
+
+    public function test_get_issues_since_paginates_and_calls_callback(): void
     {
         $mockHttp = new MockHttpClient;
-        $mockHttp->addResponse($this->jsonResponse([
-            ['id' => 1, 'number' => 1, 'title' => 'Issue 1', 'state' => 'open'],
-            ['id' => 2, 'number' => 2, 'title' => 'Issue 2', 'state' => 'open'],
-        ]));
-        // Empty second page to stop pagination.
-        $mockHttp->addResponse($this->jsonResponse([]));
+        $mockHttp->addResponse($this->jsonResponse($this->generateIssues(100)));
+        $mockHttp->addResponse($this->jsonResponse($this->generateIssues(3, 101)));
 
         $client = $this->createClient($mockHttp);
         $issues = [];
@@ -127,7 +151,9 @@ class GitHubClientTest extends TestCase
             $issues[] = $issue;
         });
 
-        $this->assertCount(2, $issues);
+        $this->assertCount(103, $issues);
+        $this->assertSame(1, $issues[0]['number']);
+        $this->assertSame(103, $issues[102]['number']);
     }
 
     public function test_get_issues_since_skips_pull_requests(): void
@@ -149,14 +175,11 @@ class GitHubClientTest extends TestCase
         $this->assertSame('Issue', $issues[0]['title']);
     }
 
-    public function test_get_issue_comments_calls_callback_per_comment(): void
+    public function test_get_issue_comments_paginates_and_calls_callback(): void
     {
         $mockHttp = new MockHttpClient;
-        $mockHttp->addResponse($this->jsonResponse([
-            ['id' => 100, 'body' => 'Comment 1', 'body_html' => '<p>Comment 1</p>', 'user' => ['id' => 1, 'login' => 'user1'], 'created_at' => '2026-01-01T00:00:00Z', 'updated_at' => '2026-01-01T00:00:00Z'],
-            ['id' => 101, 'body' => 'Comment 2', 'body_html' => '<p>Comment 2</p>', 'user' => ['id' => 2, 'login' => 'user2'], 'created_at' => '2026-01-02T00:00:00Z', 'updated_at' => '2026-01-02T00:00:00Z'],
-        ]));
-        $mockHttp->addResponse($this->jsonResponse([]));
+        $mockHttp->addResponse($this->jsonResponse($this->generateComments(100)));
+        $mockHttp->addResponse($this->jsonResponse($this->generateComments(2, 200)));
 
         $client = $this->createClient($mockHttp);
         $comments = [];
@@ -164,7 +187,9 @@ class GitHubClientTest extends TestCase
             $comments[] = $comment;
         });
 
-        $this->assertCount(2, $comments);
+        $this->assertCount(102, $comments);
+        $this->assertSame(100, $comments[0]['id']);
+        $this->assertSame(201, $comments[101]['id']);
     }
 
     public function test_close_issue_returns_issue_data(): void

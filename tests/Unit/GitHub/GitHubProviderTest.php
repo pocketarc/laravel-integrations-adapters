@@ -11,7 +11,6 @@ use Integrations\Adapters\GitHub\GitHubProvider;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
-use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 
@@ -23,7 +22,6 @@ class GitHubProviderTest extends TestCase
 
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
-        $this->assertInstanceOf(HasScheduledSync::class, $provider);
         $this->assertInstanceOf(HasIncrementalSync::class, $provider);
         $this->assertInstanceOf(RedactsRequestData::class, $provider);
     }
