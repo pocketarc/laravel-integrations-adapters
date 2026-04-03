@@ -79,7 +79,7 @@ class GitHubClient
 
             /** @var array<string, mixed> $response */
             $response = $this->integration
-	            ->to("repos/{$this->owner}/{$this->repo}/issues")
+                ->to("repos/{$this->owner}/{$this->repo}/issues")
                 ->withData($params)
                 ->post(fn () => $this->executeWithRetry(
                     fn (): array => $this->getIssueApi()->create($this->owner, $this->repo, $params)
@@ -108,7 +108,7 @@ class GitHubClient
         try {
             /** @var array<string, mixed> */
             return $this->integration
-	            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
                 ->get(fn () => $this->executeWithRetry(
                     fn (): array => $this->getIssueApi()->show($this->owner, $this->repo, $issueNumber)
                 ));
@@ -135,7 +135,7 @@ class GitHubClient
             do {
                 /** @var list<array<string, mixed>> $issues */
                 $issues = $this->integration
-	                ->to("repos/{$this->owner}/{$this->repo}/issues?page={$page}")
+                    ->to("repos/{$this->owner}/{$this->repo}/issues?page={$page}")
                     ->withData(['since' => $since->format('c'), 'page' => $page])
                     ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()
                         ->configure('full')
@@ -189,7 +189,7 @@ class GitHubClient
             do {
                 /** @var list<array<string, mixed>> $comments */
                 $comments = $this->integration
-	                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}")
+                    ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}")
                     ->withData(['issue_number' => $issueNumber, 'page' => $page])
                     ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
                         ->configure('full')
@@ -235,7 +235,7 @@ class GitHubClient
 
             /** @var list<array<string, mixed>> $timeline */
             $timeline = $this->integration
-	            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
                 ->get(fn () => $this->executeWithRetry(
                     fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
@@ -250,7 +250,7 @@ class GitHubClient
 
                 /** @var list<array<string, mixed>> $timeline */
                 $timeline = $this->integration
-	                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
+                    ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
                     ->withData(['issue_number' => $issueNumber, 'page' => $page])
                     ->get(fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()));
 
@@ -288,7 +288,7 @@ class GitHubClient
             }
 
             $result = $this->integration
-	            ->to($url)
+                ->to($url)
                 ->get(fn () => Http::timeout(120)
                     ->withHeaders($headers)
                     ->throw()
@@ -321,7 +321,7 @@ class GitHubClient
 
             /** @var array<string, mixed> $response */
             $response = $this->integration
-	            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
                 ->withData($params)
                 ->patch(fn () => $this->executeWithRetry(
                     fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, $params)
@@ -342,7 +342,7 @@ class GitHubClient
         try {
             /** @var array<string, mixed> $response */
             $response = $this->integration
-	            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
                 ->withData(['state' => 'open'])
                 ->patch(fn () => $this->executeWithRetry(
                     fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, ['state' => 'open'])
@@ -363,7 +363,7 @@ class GitHubClient
         try {
             /** @var array<string, mixed> $response */
             $response = $this->integration
-	            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments")
+                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments")
                 ->withData(['body' => $comment])
                 ->post(fn () => $this->executeWithRetry(
                     fn (): array => $this->getIssueApi()->comments()->create($this->owner, $this->repo, $issueNumber, ['body' => $comment])

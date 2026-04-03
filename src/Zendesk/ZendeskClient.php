@@ -72,7 +72,7 @@ class ZendeskClient
     public function getTickets(callable $callback): void
     {
         $this->integration
-	        ->to('tickets.json')
+            ->to('tickets.json')
             ->get(function () use ($callback): void {
                 $iterator = $this->sdk->tickets()->iterator();
 
@@ -102,7 +102,7 @@ class ZendeskClient
                 $this->sdk->setApiBasePath('api/v2/');
 
                 $response = $this->integration
-	                ->to("incremental/tickets.json?start_time={$timestamp}")
+                    ->to("incremental/tickets.json?start_time={$timestamp}")
                     ->withData(['start_time' => $timestamp])
                     ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
                         $this->sdk,
@@ -197,7 +197,7 @@ class ZendeskClient
                 $this->sdk->setApiBasePath('api/v2/');
 
                 $response = $this->integration
-	                ->to("search.json?page={$page}")
+                    ->to("search.json?page={$page}")
                     ->withData(['min_id' => $minId, 'page' => $page])
                     ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
                         $this->sdk,
@@ -281,7 +281,7 @@ class ZendeskClient
         $users = new Collection;
 
         $this->integration
-	        ->to('users.json')
+            ->to('users.json')
             ->get(function () use ($callback, &$users): void {
                 $iterator = $this->sdk->users()->iterator();
 
@@ -314,7 +314,7 @@ class ZendeskClient
 
         do {
             $commentsResponse = $this->integration
-	            ->to("tickets/{$ticketId}/comments.json")
+                ->to("tickets/{$ticketId}/comments.json")
                 ->withData($params)
                 ->get(fn () => $this->executeWithRetry(
                     fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
@@ -347,7 +347,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($url): ?string {
             $result = $this->integration
-	            ->to($url)
+                ->to($url)
                 ->get(function () use ($url): ?string {
                     $response = Http::timeout(120)->get($url);
 
@@ -369,7 +369,7 @@ class ZendeskClient
 
             do {
                 $commentsResponse = $this->integration
-	                ->to("tickets/{$ticketId}/comments.json")
+                    ->to("tickets/{$ticketId}/comments.json")
                     ->withData($params)
                     ->get(fn () => $this->executeWithRetry(
                         fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
@@ -411,7 +411,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?stdClass {
             $result = $this->integration
-	            ->to("tickets/{$ticketId}.json")
+                ->to("tickets/{$ticketId}.json")
                 ->get(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk->tickets()->find($ticketId);
                     $ticket = $response->ticket ?? null;
@@ -427,7 +427,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($userId): ?stdClass {
             $result = $this->integration
-	            ->to("users/{$userId}.json")
+                ->to("users/{$userId}.json")
                 ->get(function () use ($userId): ?stdClass {
                     $response = $this->sdk->users()->find($userId);
                     $user = $response->user ?? null;
@@ -443,7 +443,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
             $result = $this->integration
-	            ->to("tickets/{$ticketId}.json")
+                ->to("tickets/{$ticketId}.json")
                 ->withData(['status' => ZendeskStatus::Solved->value])
                 ->put(function () use ($ticketId): ?ZendeskTicketData {
                     $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
@@ -459,7 +459,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
             $result = $this->integration
-	            ->to("tickets/{$ticketId}.json")
+                ->to("tickets/{$ticketId}.json")
                 ->withData(['status' => ZendeskStatus::Open->value])
                 ->put(function () use ($ticketId): ?ZendeskTicketData {
                     $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
@@ -475,7 +475,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?ZendeskCommentData {
             $result = $this->integration
-	            ->to("tickets/{$ticketId}.json")
+                ->to("tickets/{$ticketId}.json")
                 ->withData(['comment' => $comment])
                 ->put(function () use ($ticketId, $comment): ?ZendeskCommentData {
                     $response = $this->sdk->tickets()->update($ticketId, [
@@ -496,7 +496,7 @@ class ZendeskClient
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?ZendeskCommentData {
             $result = $this->integration
-	            ->to("tickets/{$ticketId}.json")
+                ->to("tickets/{$ticketId}.json")
                 ->withData(['note' => $note])
                 ->put(function () use ($ticketId, $note): ?ZendeskCommentData {
                     $response = $this->sdk->tickets()->update($ticketId, [
