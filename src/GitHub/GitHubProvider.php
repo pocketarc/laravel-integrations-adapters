@@ -12,12 +12,13 @@ use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSyncFailed;
 use Integrations\Adapters\GitHub\Events\GitHubSyncCompleted;
 use Integrations\Contracts\HasHealthCheck;
-use Integrations\Contracts\HasScheduledSync;
+use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
 use Integrations\Sync\SyncResult;
 
-class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
+class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
     public function name(): string
     {
@@ -63,8 +64,13 @@ class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationPro
 
     public function sync(Integration $integration): SyncResult
     {
+        return $this->syncIncremental($integration, null);
+    }
+
+    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+    {
         $client = new GitHubClient($integration);
-        $since = $integration->last_synced_at ?? now()->subDay();
+        $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
 
         $successCount = 0;
         $failureCount = 0;
@@ -91,10 +97,26 @@ class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationPro
 
         $safeSyncedAt = $earliestFailureAt ?? now();
 
-        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt);
+        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, $safeSyncedAt->toIso8601String());
         GitHubSyncCompleted::dispatch($integration, $result);
 
         return $result;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function sensitiveRequestFields(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function sensitiveResponseFields(): array
+    {
+        return [];
     }
 
     public function defaultSyncInterval(): int

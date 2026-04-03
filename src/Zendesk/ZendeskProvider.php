@@ -13,12 +13,13 @@ use Integrations\Adapters\Zendesk\Events\ZendeskSyncCompleted;
 use Integrations\Adapters\Zendesk\Events\ZendeskTicketSynced;
 use Integrations\Adapters\Zendesk\Events\ZendeskTicketSyncFailed;
 use Integrations\Contracts\HasHealthCheck;
-use Integrations\Contracts\HasScheduledSync;
+use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
 use Integrations\Sync\SyncResult;
 
-class ZendeskProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
+class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
     public function name(): string
     {
@@ -65,8 +66,13 @@ class ZendeskProvider implements HasHealthCheck, HasScheduledSync, IntegrationPr
 
     public function sync(Integration $integration): SyncResult
     {
+        return $this->syncIncremental($integration, null);
+    }
+
+    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+    {
         $client = new ZendeskClient($integration);
-        $since = $integration->last_synced_at ?? now()->subDay();
+        $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
 
         $successCount = 0;
         $failureCount = 0;
@@ -92,10 +98,26 @@ class ZendeskProvider implements HasHealthCheck, HasScheduledSync, IntegrationPr
 
         $safeSyncedAt = $earliestFailureAt ?? now();
 
-        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt);
+        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         ZendeskSyncCompleted::dispatch($integration, $result);
 
         return $result;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function sensitiveRequestFields(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function sensitiveResponseFields(): array
+    {
+        return [];
     }
 
     public function defaultSyncInterval(): int

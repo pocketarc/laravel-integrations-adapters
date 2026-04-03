@@ -71,10 +71,9 @@ class ZendeskClient
      */
     public function getTickets(callable $callback): void
     {
-        $this->integration->request(
-            endpoint: 'tickets.json',
-            method: 'GET',
-            callback: function () use ($callback): void {
+        $this->integration
+	        ->to('tickets.json')
+            ->get(function () use ($callback): void {
                 $iterator = $this->sdk->tickets()->iterator();
 
                 foreach ($iterator as $ticket) {
@@ -82,8 +81,7 @@ class ZendeskClient
                         $callback($ticket);
                     }
                 }
-            },
-        );
+            });
     }
 
     /**
@@ -103,10 +101,10 @@ class ZendeskClient
 
                 $this->sdk->setApiBasePath('api/v2/');
 
-                $response = $this->integration->request(
-                    endpoint: "incremental/tickets.json?start_time={$timestamp}",
-                    method: 'GET',
-                    callback: fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
+                $response = $this->integration
+	                ->to("incremental/tickets.json?start_time={$timestamp}")
+                    ->withData(['start_time' => $timestamp])
+                    ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
                         $this->sdk,
                         'incremental/tickets.json',
                         [
@@ -115,9 +113,7 @@ class ZendeskClient
                                 'include' => 'users',
                             ],
                         ]
-                    )),
-                    requestData: ['start_time' => $timestamp],
-                );
+                    )));
 
                 if (! $response instanceof stdClass) {
                     Log::warning('ZendeskClient: API returned null response, breaking loop');
@@ -200,10 +196,10 @@ class ZendeskClient
             do {
                 $this->sdk->setApiBasePath('api/v2/');
 
-                $response = $this->integration->request(
-                    endpoint: "search.json?page={$page}",
-                    method: 'GET',
-                    callback: fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
+                $response = $this->integration
+	                ->to("search.json?page={$page}")
+                    ->withData(['min_id' => $minId, 'page' => $page])
+                    ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
                         $this->sdk,
                         'search.json',
                         [
@@ -215,9 +211,7 @@ class ZendeskClient
                                 'include' => 'tickets(users)',
                             ],
                         ]
-                    )),
-                    requestData: ['min_id' => $minId, 'page' => $page],
-                );
+                    )));
 
                 if (! $response instanceof stdClass) {
                     break;
@@ -286,10 +280,9 @@ class ZendeskClient
         /** @var Collection<int, ZendeskUserData> $users */
         $users = new Collection;
 
-        $this->integration->request(
-            endpoint: 'users.json',
-            method: 'GET',
-            callback: function () use ($callback, &$users): void {
+        $this->integration
+	        ->to('users.json')
+            ->get(function () use ($callback, &$users): void {
                 $iterator = $this->sdk->users()->iterator();
 
                 foreach ($iterator as $user) {
@@ -304,7 +297,7 @@ class ZendeskClient
                     $users->push($data);
                 }
             },
-        );
+            );
 
         return $users;
     }
@@ -320,14 +313,12 @@ class ZendeskClient
         $params = ['page[size]' => 100];
 
         do {
-            $commentsResponse = $this->integration->request(
-                endpoint: "tickets/{$ticketId}/comments.json",
-                method: 'GET',
-                callback: fn () => $this->executeWithRetry(
+            $commentsResponse = $this->integration
+	            ->to("tickets/{$ticketId}/comments.json")
+                ->withData($params)
+                ->get(fn () => $this->executeWithRetry(
                     fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
-                ),
-                requestData: $params,
-            );
+                ));
 
             if (! $commentsResponse instanceof stdClass || ! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
                 return;
@@ -355,15 +346,13 @@ class ZendeskClient
     public function downloadAttachment(string $url): ?string
     {
         return $this->executeWithErrorHandling(function () use ($url): ?string {
-            $result = $this->integration->request(
-                endpoint: $url,
-                method: 'GET',
-                callback: function () use ($url): ?string {
+            $result = $this->integration
+	            ->to($url)
+                ->get(function () use ($url): ?string {
                     $response = Http::timeout(120)->get($url);
 
                     return $response->successful() ? $response->body() : null;
-                },
-            );
+                });
 
             return is_string($result) ? $result : null;
         });
@@ -379,14 +368,12 @@ class ZendeskClient
             $params = ['page[size]' => 100];
 
             do {
-                $commentsResponse = $this->integration->request(
-                    endpoint: "tickets/{$ticketId}/comments.json",
-                    method: 'GET',
-                    callback: fn () => $this->executeWithRetry(
+                $commentsResponse = $this->integration
+	                ->to("tickets/{$ticketId}/comments.json")
+                    ->withData($params)
+                    ->get(fn () => $this->executeWithRetry(
                         fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
-                    ),
-                    requestData: $params,
-                );
+                    ));
 
                 if (! $commentsResponse instanceof stdClass || ! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
                     return null;
@@ -423,16 +410,14 @@ class ZendeskClient
     public function getTicket(int $ticketId): ?stdClass
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?stdClass {
-            $result = $this->integration->request(
-                endpoint: "tickets/{$ticketId}.json",
-                method: 'GET',
-                callback: function () use ($ticketId): ?stdClass {
+            $result = $this->integration
+	            ->to("tickets/{$ticketId}.json")
+                ->get(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk->tickets()->find($ticketId);
                     $ticket = $response->ticket ?? null;
 
                     return $ticket instanceof stdClass ? $ticket : null;
-                },
-            );
+                });
 
             return $result instanceof stdClass ? $result : null;
         });
@@ -441,16 +426,14 @@ class ZendeskClient
     public function getUser(int $userId): ?stdClass
     {
         return $this->executeWithErrorHandling(function () use ($userId): ?stdClass {
-            $result = $this->integration->request(
-                endpoint: "users/{$userId}.json",
-                method: 'GET',
-                callback: function () use ($userId): ?stdClass {
+            $result = $this->integration
+	            ->to("users/{$userId}.json")
+                ->get(function () use ($userId): ?stdClass {
                     $response = $this->sdk->users()->find($userId);
                     $user = $response->user ?? null;
 
                     return $user instanceof stdClass ? $user : null;
-                },
-            );
+                });
 
             return $result instanceof stdClass ? $result : null;
         });
@@ -459,16 +442,14 @@ class ZendeskClient
     public function closeTicket(int $ticketId): ?ZendeskTicketData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $result = $this->integration->request(
-                endpoint: "tickets/{$ticketId}.json",
-                method: 'PUT',
-                callback: function () use ($ticketId): ?ZendeskTicketData {
+            $result = $this->integration
+	            ->to("tickets/{$ticketId}.json")
+                ->withData(['status' => ZendeskStatus::Solved->value])
+                ->put(function () use ($ticketId): ?ZendeskTicketData {
                     $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
 
                     return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
-                },
-                requestData: ['status' => ZendeskStatus::Solved->value],
-            );
+                });
 
             return $result instanceof ZendeskTicketData ? $result : null;
         });
@@ -477,16 +458,14 @@ class ZendeskClient
     public function reopenTicket(int $ticketId): ?ZendeskTicketData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $result = $this->integration->request(
-                endpoint: "tickets/{$ticketId}.json",
-                method: 'PUT',
-                callback: function () use ($ticketId): ?ZendeskTicketData {
+            $result = $this->integration
+	            ->to("tickets/{$ticketId}.json")
+                ->withData(['status' => ZendeskStatus::Open->value])
+                ->put(function () use ($ticketId): ?ZendeskTicketData {
                     $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
 
                     return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
-                },
-                requestData: ['status' => ZendeskStatus::Open->value],
-            );
+                });
 
             return $result instanceof ZendeskTicketData ? $result : null;
         });
@@ -495,10 +474,10 @@ class ZendeskClient
     public function addComment(int $ticketId, string $comment): ?ZendeskCommentData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?ZendeskCommentData {
-            $result = $this->integration->request(
-                endpoint: "tickets/{$ticketId}.json",
-                method: 'PUT',
-                callback: function () use ($ticketId, $comment): ?ZendeskCommentData {
+            $result = $this->integration
+	            ->to("tickets/{$ticketId}.json")
+                ->withData(['comment' => $comment])
+                ->put(function () use ($ticketId, $comment): ?ZendeskCommentData {
                     $response = $this->sdk->tickets()->update($ticketId, [
                         'comment' => [
                             'body' => $comment,
@@ -507,9 +486,7 @@ class ZendeskClient
                     ]);
 
                     return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
-                },
-                requestData: ['comment' => $comment],
-            );
+                });
 
             return $result instanceof ZendeskCommentData ? $result : null;
         });
@@ -518,10 +495,10 @@ class ZendeskClient
     public function addInternalNote(int $ticketId, string $note): ?ZendeskCommentData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?ZendeskCommentData {
-            $result = $this->integration->request(
-                endpoint: "tickets/{$ticketId}.json",
-                method: 'PUT',
-                callback: function () use ($ticketId, $note): ?ZendeskCommentData {
+            $result = $this->integration
+	            ->to("tickets/{$ticketId}.json")
+                ->withData(['note' => $note])
+                ->put(function () use ($ticketId, $note): ?ZendeskCommentData {
                     $response = $this->sdk->tickets()->update($ticketId, [
                         'comment' => [
                             'body' => $note,
@@ -530,9 +507,7 @@ class ZendeskClient
                     ]);
 
                     return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
-                },
-                requestData: ['note' => $note],
-            );
+                });
 
             return $result instanceof ZendeskCommentData ? $result : null;
         });

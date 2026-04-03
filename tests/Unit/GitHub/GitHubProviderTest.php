@@ -10,8 +10,10 @@ use Integrations\Adapters\GitHub\GitHubMetadata;
 use Integrations\Adapters\GitHub\GitHubProvider;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 
 class GitHubProviderTest extends TestCase
 {
@@ -22,6 +24,8 @@ class GitHubProviderTest extends TestCase
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
         $this->assertInstanceOf(HasScheduledSync::class, $provider);
+        $this->assertInstanceOf(HasIncrementalSync::class, $provider);
+        $this->assertInstanceOf(RedactsRequestData::class, $provider);
     }
 
     public function test_name(): void
@@ -85,6 +89,14 @@ class GitHubProviderTest extends TestCase
         $provider = new GitHubProvider;
 
         $this->assertSame(60, $provider->defaultRateLimit());
+    }
+
+    public function test_sensitive_fields_return_arrays(): void
+    {
+        $provider = new GitHubProvider;
+
+        $this->assertIsArray($provider->sensitiveRequestFields());
+        $this->assertIsArray($provider->sensitiveResponseFields());
     }
 
     public function test_health_check_returns_true_on_success(): void
