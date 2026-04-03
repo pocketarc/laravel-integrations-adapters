@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Zendesk\Data;
 
 use Spatie\LaravelData\Data;
-use Spatie\LaravelData\Optional;
 
 class ZendeskAttachmentData extends Data
 {
     /**
-     * @param  array<int, array<string, mixed>>|null|Optional  $thumbnails
+     * @param  array<int, array<string, mixed>>|null  $thumbnails
+     * @param  array<string, mixed>|null  $original
      */
     public function __construct(
         public readonly int $id,
@@ -26,6 +26,7 @@ class ZendeskAttachmentData extends Data
         public readonly bool $deleted = false,
         public readonly bool $malware_access_override = false,
         public readonly string $malware_scan_result = '',
-        public readonly array|null|Optional $thumbnails = null,
+        public readonly ?array $thumbnails = null,
+        public readonly ?array $original = null,
     ) {}
 }

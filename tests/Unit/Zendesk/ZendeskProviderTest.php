@@ -10,8 +10,9 @@ use Integrations\Adapters\Zendesk\ZendeskCredentials;
 use Integrations\Adapters\Zendesk\ZendeskMetadata;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
 use Integrations\Contracts\HasHealthCheck;
-use Integrations\Contracts\HasScheduledSync;
+use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 
 class ZendeskProviderTest extends TestCase
 {
@@ -21,7 +22,8 @@ class ZendeskProviderTest extends TestCase
 
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
-        $this->assertInstanceOf(HasScheduledSync::class, $provider);
+        $this->assertInstanceOf(HasIncrementalSync::class, $provider);
+        $this->assertInstanceOf(RedactsRequestData::class, $provider);
     }
 
     public function test_name(): void
@@ -87,6 +89,14 @@ class ZendeskProviderTest extends TestCase
         $provider = new ZendeskProvider;
 
         $this->assertSame(100, $provider->defaultRateLimit());
+    }
+
+    public function test_sensitive_fields_return_arrays(): void
+    {
+        $provider = new ZendeskProvider;
+
+        $this->assertIsArray($provider->sensitiveRequestFields());
+        $this->assertIsArray($provider->sensitiveResponseFields());
     }
 
     public function test_health_check_returns_true_on_success(): void

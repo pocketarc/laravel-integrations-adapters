@@ -4,23 +4,23 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk\Data;
 
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Integrations\Adapters\Zendesk\Enums\ZendeskStatus;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Data;
-use Spatie\LaravelData\Optional;
 
 class ZendeskTicketData extends Data
 {
     /**
      * @param  Collection<int, ZendeskCustomFieldData>  $custom_fields
-     * @param  array<int, string>|Optional  $tags
-     * @param  array<int, int>|Optional  $collaborator_ids
-     * @param  array<int, int>|Optional  $follower_ids
-     * @param  array<int, int>|Optional  $email_cc_ids
-     * @param  array<int, int>|Optional  $sharing_agreement_ids
-     * @param  array<int, int>|Optional  $followup_ids
+     * @param  array<int, string>|null  $tags
+     * @param  array<int, int>|null  $collaborator_ids
+     * @param  array<int, int>|null  $follower_ids
+     * @param  array<int, int>|null  $email_cc_ids
+     * @param  array<int, int>|null  $sharing_agreement_ids
+     * @param  array<int, int>|null  $followup_ids
+     * @param  array<string, mixed>|null  $original
      */
     public function __construct(
         public readonly int $id,
@@ -56,12 +56,13 @@ class ZendeskTicketData extends Data
         public readonly ?ZendeskSatisfactionRatingData $satisfaction_rating = null,
         public readonly string $encoded_id = '',
         public readonly ?string $recipient = null,
-        public readonly array|Optional $tags = [],
-        public readonly array|Optional $collaborator_ids = [],
-        public readonly array|Optional $follower_ids = [],
-        public readonly array|Optional $email_cc_ids = [],
-        public readonly array|Optional $sharing_agreement_ids = [],
-        public readonly array|Optional $followup_ids = [],
+        public readonly ?array $tags = [],
+        public readonly ?array $collaborator_ids = [],
+        public readonly ?array $follower_ids = [],
+        public readonly ?array $email_cc_ids = [],
+        public readonly ?array $sharing_agreement_ids = [],
+        public readonly ?array $followup_ids = [],
+        public readonly ?array $original = null,
     ) {}
 
     public function getCustomField(int $fieldId): mixed

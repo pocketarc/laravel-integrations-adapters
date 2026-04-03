@@ -24,6 +24,8 @@ class ZendeskClient
 {
     use RetriesRequests;
 
+    private Integration $integration;
+
     private ZendeskAPI $sdk;
 
     private string $subdomain;
@@ -32,7 +34,7 @@ class ZendeskClient
 
     private string $token;
 
-    public function __construct(Integration $integration)
+    public function __construct(Integration $integration, ?ZendeskAPI $sdk = null)
     {
         $credentials = $integration->credentials;
         $metadata = $integration->metadata;
@@ -41,15 +43,20 @@ class ZendeskClient
             throw new RuntimeException('Invalid Zendesk integration: credentials or metadata type mismatch.');
         }
 
+        $this->integration = $integration;
         $this->subdomain = $metadata->subdomain;
         $this->email = $credentials->email;
         $this->token = $credentials->token;
 
-        $this->sdk = new ZendeskAPI($this->subdomain);
-        $this->sdk->setAuth('basic', [
-            'username' => $this->email,
-            'token' => $this->token,
-        ]);
+        if ($sdk !== null) {
+            $this->sdk = $sdk;
+        } else {
+            $this->sdk = new ZendeskAPI($this->subdomain);
+            $this->sdk->setAuth('basic', [
+                'username' => $this->email,
+                'token' => $this->token,
+            ]);
+        }
     }
 
     public function getSdkClient(): ZendeskAPI
@@ -64,13 +71,17 @@ class ZendeskClient
      */
     public function getTickets(callable $callback): void
     {
-        $iterator = $this->sdk->tickets()->iterator();
+        $this->integration
+            ->to('tickets.json')
+            ->get(function () use ($callback): void {
+                $iterator = $this->sdk->tickets()->iterator();
 
-        foreach ($iterator as $ticket) {
-            if (is_object($ticket)) {
-                $callback($ticket);
-            }
-        }
+                foreach ($iterator as $ticket) {
+                    if (is_object($ticket)) {
+                        $callback($ticket);
+                    }
+                }
+            });
     }
 
     /**
@@ -83,14 +94,16 @@ class ZendeskClient
     {
         $timestamp = $startTime->getTimestamp();
 
-        try {
-            do {
-                $start = Carbon::createFromTimestamp($timestamp);
-                Log::info("ZendeskClient: Fetching tickets since start_time={$start->toDateTimeString()}");
+        do {
+            $start = Carbon::createFromTimestamp($timestamp);
+            Log::info("ZendeskClient: Fetching tickets since start_time={$start->toDateTimeString()}");
 
-                $this->sdk->setApiBasePath('api/v2/');
+            $this->sdk->setApiBasePath('api/v2/');
 
-                $response = $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
+            $response = $this->integration
+                ->to("incremental/tickets.json?start_time={$timestamp}")
+                ->withData(['start_time' => $timestamp])
+                ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
                     $this->sdk,
                     'incremental/tickets.json',
                     [
@@ -99,72 +112,65 @@ class ZendeskClient
                             'include' => 'users',
                         ],
                     ]
-                ));
+                )));
 
-                if ($response === null) {
-                    Log::warning('ZendeskClient: API returned null response, breaking loop');
-                    break;
-                }
-
-                /** @var list<object> $usersArray */
-                $usersArray = is_array($response->users) ? $response->users : [];
-                /** @var list<object> $ticketsArray */
-                $ticketsArray = is_array($response->tickets) ? $response->tickets : [];
-
-                Log::info('ZendeskClient: API response received', [
-                    'tickets_count' => count($ticketsArray),
-                    'users_count' => count($usersArray),
-                    'has_next_page' => $response->next_page !== null,
-                ]);
-
-                if (count($ticketsArray) === 0) {
-                    break;
-                }
-
-                $users = collect($usersArray)
-                    ->keyBy('id')
-                    ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
-
-                foreach ($ticketsArray as $ticketObj) {
-                    try {
-                        $ticketArray = json_decode((string) json_encode($ticketObj), true);
-                        if (! is_array($ticketArray)) {
-                            continue;
-                        }
-                        $ticketArray = $this->normalizeViaChannel($ticketArray);
-                        $ticket = ZendeskTicketData::from($ticketArray);
-                        $user = $users[$ticket->requester_id] ?? null;
-
-                        $callback($ticket, $user);
-                    } catch (\Throwable $e) {
-                        $rawId = is_array($ticketArray ?? null) ? ($ticketArray['id'] ?? null) : null;
-                        $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
-                        Log::error("ZendeskClient: Failed processing ticket {$failedId}: {$e->getMessage()}");
-                        report($e);
-                    }
-                }
-
-                $nextPage = is_string($response->next_page);
-                if ($nextPage) {
-                    $urlParts = parse_url($response->next_page);
-                    $queryString = is_array($urlParts) && isset($urlParts['query']) ? $urlParts['query'] : '';
-                    parse_str($queryString, $queryParams);
-                    $newTimestamp = isset($queryParams['start_time']) && is_numeric($queryParams['start_time']) ? (int) $queryParams['start_time'] : $timestamp;
-                    if ($newTimestamp > $timestamp) {
-                        $timestamp = $newTimestamp;
-                    } else {
-                        $nextPage = false;
-                    }
-                }
-            } while ($nextPage);
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
+            if (! $response instanceof stdClass) {
+                Log::warning('ZendeskClient: API returned null response, breaking loop');
+                break;
             }
 
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-        }
+            /** @var list<object> $usersArray */
+            $usersArray = is_array($response->users) ? $response->users : [];
+            /** @var list<object> $ticketsArray */
+            $ticketsArray = is_array($response->tickets) ? $response->tickets : [];
+
+            Log::info('ZendeskClient: API response received', [
+                'tickets_count' => count($ticketsArray),
+                'users_count' => count($usersArray),
+                'has_next_page' => $response->next_page !== null,
+            ]);
+
+            if (count($ticketsArray) === 0) {
+                break;
+            }
+
+            $users = collect($usersArray)
+                ->keyBy('id')
+                ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
+
+            foreach ($ticketsArray as $ticketObj) {
+                try {
+                    $ticketArray = json_decode((string) json_encode($ticketObj), true);
+                    if (! is_array($ticketArray)) {
+                        continue;
+                    }
+                    $original = $ticketArray;
+                    $ticketArray = $this->normalizeViaChannel($ticketArray);
+                    $ticketArray['original'] = $original;
+                    $ticket = ZendeskTicketData::from($ticketArray);
+                    $user = $users[$ticket->requester_id] ?? null;
+
+                    $callback($ticket, $user);
+                } catch (\Throwable $e) {
+                    $rawId = is_array($ticketArray ?? null) ? ($ticketArray['id'] ?? null) : null;
+                    $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
+                    Log::error("ZendeskClient: Failed processing ticket {$failedId}: {$e->getMessage()}");
+                }
+            }
+
+            $nextPage = is_string($response->next_page);
+            if ($nextPage) {
+                $urlParts = parse_url($response->next_page);
+                $queryString = is_array($urlParts) && isset($urlParts['query']) ? $urlParts['query'] : '';
+                parse_str($queryString, $queryParams);
+                $newTimestamp = isset($queryParams['start_time']) && is_numeric($queryParams['start_time']) ? (int) $queryParams['start_time'] : $timestamp;
+                if ($newTimestamp > $timestamp) {
+                    $timestamp = $newTimestamp;
+                } else {
+                    $nextPage = false;
+                }
+            }
+        } while ($nextPage);
     }
 
     /**
@@ -175,14 +181,16 @@ class ZendeskClient
      */
     public function getTicketsNewerThan(int $minId, callable $callback): void
     {
-        try {
-            $page = 1;
-            $foundOlderTicket = false;
+        $page = 1;
+        $foundOlderTicket = false;
 
-            do {
-                $this->sdk->setApiBasePath('api/v2/');
+        do {
+            $this->sdk->setApiBasePath('api/v2/');
 
-                $response = $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
+            $response = $this->integration
+                ->to("search.json?page={$page}")
+                ->withData(['min_id' => $minId, 'page' => $page])
+                ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => \Zendesk\API\Http::send(
                     $this->sdk,
                     'search.json',
                     [
@@ -194,62 +202,55 @@ class ZendeskClient
                             'include' => 'tickets(users)',
                         ],
                     ]
-                ));
+                )));
 
-                if ($response === null) {
-                    break;
-                }
-
-                /** @var list<object> $resultsArray */
-                $resultsArray = is_array($response->results) ? $response->results : [];
-
-                /** @var list<object> $usersArray */
-                $usersArray = isset($response->users) && is_array($response->users) ? $response->users : [];
-                $users = collect($usersArray)
-                    ->keyBy('id')
-                    ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
-
-                foreach ($resultsArray as $ticketObj) {
-                    try {
-                        $ticketArray = json_decode((string) json_encode($ticketObj), true);
-                        if (! is_array($ticketArray)) {
-                            continue;
-                        }
-                        $ticketArray = $this->normalizeViaChannel($ticketArray);
-                        $ticket = ZendeskTicketData::from($ticketArray);
-
-                        if ($ticket->id <= $minId) {
-                            $foundOlderTicket = true;
-
-                            continue;
-                        }
-
-                        $user = $users[$ticket->requester_id] ?? null;
-
-                        $callback($ticket, $user);
-                    } catch (\Throwable $e) {
-                        $rawId = is_array($ticketArray ?? null) ? ($ticketArray['id'] ?? null) : null;
-                        $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
-                        Log::error("ZendeskClient: Failed processing ticket {$failedId}: {$e->getMessage()}");
-                        report($e);
-                    }
-                }
-
-                if ($foundOlderTicket) {
-                    break;
-                }
-
-                $hasNextPage = $response->next_page !== null;
-                $page++;
-            } while ($hasNextPage);
-        } catch (\Throwable $e) {
-            if (config('app.debug') === true) {
-                throw $e;
+            if (! $response instanceof stdClass) {
+                break;
             }
 
-            Log::error('ZendeskClient: '.$e->getMessage(), ['exception' => $e]);
-            report($e);
-        }
+            /** @var list<object> $resultsArray */
+            $resultsArray = is_array($response->results) ? $response->results : [];
+
+            /** @var list<object> $usersArray */
+            $usersArray = isset($response->users) && is_array($response->users) ? $response->users : [];
+            $users = collect($usersArray)
+                ->keyBy('id')
+                ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
+
+            foreach ($resultsArray as $ticketObj) {
+                try {
+                    $ticketArray = json_decode((string) json_encode($ticketObj), true);
+                    if (! is_array($ticketArray)) {
+                        continue;
+                    }
+                    $original = $ticketArray;
+                    $ticketArray = $this->normalizeViaChannel($ticketArray);
+                    $ticketArray['original'] = $original;
+                    $ticket = ZendeskTicketData::from($ticketArray);
+
+                    if ($ticket->id <= $minId) {
+                        $foundOlderTicket = true;
+
+                        continue;
+                    }
+
+                    $user = $users[$ticket->requester_id] ?? null;
+
+                    $callback($ticket, $user);
+                } catch (\Throwable $e) {
+                    $rawId = is_array($ticketArray ?? null) ? ($ticketArray['id'] ?? null) : null;
+                    $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
+                    Log::error("ZendeskClient: Failed processing ticket {$failedId}: {$e->getMessage()}");
+                }
+            }
+
+            if ($foundOlderTicket) {
+                break;
+            }
+
+            $hasNextPage = $response->next_page !== null;
+            $page++;
+        } while ($hasNextPage);
     }
 
     /**
@@ -260,21 +261,27 @@ class ZendeskClient
      */
     public function getUsers(?callable $callback = null): Collection
     {
-        $iterator = $this->sdk->users()->iterator();
-
         /** @var Collection<int, ZendeskUserData> $users */
         $users = new Collection;
-        foreach ($iterator as $user) {
-            if (! is_object($user)) {
-                continue;
-            }
-            $data = ZendeskUserData::createFromZendeskResponse($user);
-            if ($callback !== null) {
-                $callback($data);
-            }
 
-            $users->push($data);
-        }
+        $this->integration
+            ->to('users.json')
+            ->get(function () use ($callback, &$users): void {
+                $iterator = $this->sdk->users()->iterator();
+
+                foreach ($iterator as $user) {
+                    if (! is_object($user)) {
+                        continue;
+                    }
+                    $data = ZendeskUserData::createFromZendeskResponse($user);
+                    if ($callback !== null) {
+                        $callback($data);
+                    }
+
+                    $users->push($data);
+                }
+            },
+            );
 
         return $users;
     }
@@ -290,11 +297,14 @@ class ZendeskClient
         $params = ['page[size]' => 100];
 
         do {
-            $commentsResponse = $this->executeWithRetry(
-                fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
-            );
+            $commentsResponse = $this->integration
+                ->to("tickets/{$ticketId}/comments.json")
+                ->withData($params)
+                ->get(fn () => $this->executeWithRetry(
+                    fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
+                ));
 
-            if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
+            if (! $commentsResponse instanceof stdClass || ! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
                 return;
             }
 
@@ -303,7 +313,9 @@ class ZendeskClient
                 if (! is_array($commentArray)) {
                     continue;
                 }
+                $original = $commentArray;
                 $commentArray = $this->normalizeViaChannel($commentArray);
+                $commentArray['original'] = $original;
                 $comment = ZendeskCommentData::from($commentArray);
                 $callback($comment);
             }
@@ -318,9 +330,15 @@ class ZendeskClient
     public function downloadAttachment(string $url): ?string
     {
         return $this->executeWithErrorHandling(function () use ($url): ?string {
-            $response = Http::timeout(120)->get($url);
+            $result = $this->integration
+                ->to($url)
+                ->get(function () use ($url): ?string {
+                    $response = Http::timeout(120)->get($url);
 
-            return $response->successful() ? $response->body() : null;
+                    return $response->successful() ? $response->body() : null;
+                });
+
+            return is_string($result) ? $result : null;
         });
     }
 
@@ -334,11 +352,14 @@ class ZendeskClient
             $params = ['page[size]' => 100];
 
             do {
-                $commentsResponse = $this->executeWithRetry(
-                    fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
-                );
+                $commentsResponse = $this->integration
+                    ->to("tickets/{$ticketId}/comments.json")
+                    ->withData($params)
+                    ->get(fn () => $this->executeWithRetry(
+                        fn () => $this->sdk->tickets($ticketId)->comments()->findAll($params)
+                    ));
 
-                if (! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
+                if (! $commentsResponse instanceof stdClass || ! isset($commentsResponse->comments) || ! is_array($commentsResponse->comments)) {
                     return null;
                 }
 
@@ -373,66 +394,106 @@ class ZendeskClient
     public function getTicket(int $ticketId): ?stdClass
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?stdClass {
-            $response = $this->sdk->tickets()->find($ticketId);
-            $ticket = $response->ticket ?? null;
+            $result = $this->integration
+                ->to("tickets/{$ticketId}.json")
+                ->get(function () use ($ticketId): ?stdClass {
+                    $response = $this->sdk->tickets()->find($ticketId);
+                    $ticket = $response->ticket ?? null;
 
-            return $ticket instanceof stdClass ? $ticket : null;
+                    return $ticket instanceof stdClass ? $ticket : null;
+                });
+
+            return $result instanceof stdClass ? $result : null;
         });
     }
 
     public function getUser(int $userId): ?stdClass
     {
         return $this->executeWithErrorHandling(function () use ($userId): ?stdClass {
-            $response = $this->sdk->users()->find($userId);
-            $user = $response->user ?? null;
+            $result = $this->integration
+                ->to("users/{$userId}.json")
+                ->get(function () use ($userId): ?stdClass {
+                    $response = $this->sdk->users()->find($userId);
+                    $user = $response->user ?? null;
 
-            return $user instanceof stdClass ? $user : null;
+                    return $user instanceof stdClass ? $user : null;
+                });
+
+            return $result instanceof stdClass ? $result : null;
         });
     }
 
     public function closeTicket(int $ticketId): ?ZendeskTicketData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
+            $result = $this->integration
+                ->to("tickets/{$ticketId}.json")
+                ->withData(['status' => ZendeskStatus::Solved->value])
+                ->put(function () use ($ticketId): ?ZendeskTicketData {
+                    $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
 
-            return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+                    return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+                });
+
+            return $result instanceof ZendeskTicketData ? $result : null;
         });
     }
 
     public function reopenTicket(int $ticketId): ?ZendeskTicketData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
+            $result = $this->integration
+                ->to("tickets/{$ticketId}.json")
+                ->withData(['status' => ZendeskStatus::Open->value])
+                ->put(function () use ($ticketId): ?ZendeskTicketData {
+                    $response = $this->sdk->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
 
-            return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+                    return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+                });
+
+            return $result instanceof ZendeskTicketData ? $result : null;
         });
     }
 
     public function addComment(int $ticketId, string $comment): ?ZendeskCommentData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?ZendeskCommentData {
-            $response = $this->sdk->tickets()->update($ticketId, [
-                'comment' => [
-                    'body' => $comment,
-                    'public' => true,
-                ],
-            ]);
+            $result = $this->integration
+                ->to("tickets/{$ticketId}.json")
+                ->withData(['comment' => $comment])
+                ->put(function () use ($ticketId, $comment): ?ZendeskCommentData {
+                    $response = $this->sdk->tickets()->update($ticketId, [
+                        'comment' => [
+                            'body' => $comment,
+                            'public' => true,
+                        ],
+                    ]);
 
-            return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
+                    return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
+                });
+
+            return $result instanceof ZendeskCommentData ? $result : null;
         });
     }
 
     public function addInternalNote(int $ticketId, string $note): ?ZendeskCommentData
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?ZendeskCommentData {
-            $response = $this->sdk->tickets()->update($ticketId, [
-                'comment' => [
-                    'body' => $note,
-                    'public' => false,
-                ],
-            ]);
+            $result = $this->integration
+                ->to("tickets/{$ticketId}.json")
+                ->withData(['note' => $note])
+                ->put(function () use ($ticketId, $note): ?ZendeskCommentData {
+                    $response = $this->sdk->tickets()->update($ticketId, [
+                        'comment' => [
+                            'body' => $note,
+                            'public' => false,
+                        ],
+                    ]);
 
-            return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
+                    return $response instanceof stdClass ? $this->commentDataFromResponse($response) : null;
+                });
+
+            return $result instanceof ZendeskCommentData ? $result : null;
         });
     }
 
@@ -467,7 +528,9 @@ class ZendeskClient
             }
 
             $commentArray['audit_id'] = $auditId;
+            $original = $commentArray;
             $commentArray = $this->normalizeViaChannel($commentArray);
+            $commentArray['original'] = $original;
 
             return ZendeskCommentData::from($commentArray);
         }
@@ -487,7 +550,9 @@ class ZendeskClient
             return null;
         }
 
+        $original = $ticketArray;
         $ticketArray = $this->normalizeViaChannel($ticketArray);
+        $ticketArray['original'] = $original;
 
         return ZendeskTicketData::from($ticketArray);
     }

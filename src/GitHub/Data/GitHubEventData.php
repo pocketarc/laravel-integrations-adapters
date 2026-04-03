@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\GitHub\Data;
 
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 use Integrations\Adapters\GitHub\Enums\GitHubEventType;
 use Spatie\LaravelData\Attributes\WithoutValidation;
 use Spatie\LaravelData\Data;

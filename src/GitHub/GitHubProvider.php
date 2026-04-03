@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\GitHub;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
+use Integrations\Adapters\GitHub\Events\GitHubIssueSyncFailed;
+use Integrations\Adapters\GitHub\Events\GitHubSyncCompleted;
 use Integrations\Contracts\HasHealthCheck;
-use Integrations\Contracts\HasScheduledSync;
+use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
+use Integrations\Sync\SyncResult;
+use InvalidArgumentException;
 
-class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationProvider
+class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
     public function name(): string
     {
@@ -56,15 +63,65 @@ class GitHubProvider implements HasHealthCheck, HasScheduledSync, IntegrationPro
         return GitHubMetadata::class;
     }
 
-    public function sync(Integration $integration): void
+    public function sync(Integration $integration): SyncResult
     {
-        $client = new GitHubClient($integration);
-        $since = $integration->last_synced_at ?? now()->subDay();
+        return $this->syncIncremental($integration, null);
+    }
 
-        $client->getIssuesSince($since, function (array $issue) use ($integration): void {
-            $issueData = GitHubIssueData::createFromGitHubResponse($issue);
-            GitHubIssueSynced::dispatch($integration, $issueData);
+    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+    {
+        if ($cursor !== null && ! is_string($cursor)) {
+            throw new InvalidArgumentException('GitHubProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
+        }
+
+        $client = new GitHubClient($integration);
+        $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
+
+        $successCount = 0;
+        $failureCount = 0;
+        $earliestFailureAt = null;
+
+        $client->getIssuesSince($since, function (array $issue) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+            try {
+                $issueData = GitHubIssueData::createFromGitHubResponse($issue);
+                GitHubIssueSynced::dispatch($integration, $issueData);
+                $successCount++;
+            } catch (\Throwable $e) {
+                $failureCount++;
+                $updatedAt = isset($issue['updated_at']) && is_string($issue['updated_at']) ? Carbon::parse($issue['updated_at']) : null;
+                if ($updatedAt !== null && ($earliestFailureAt === null || $updatedAt->isBefore($earliestFailureAt))) {
+                    $earliestFailureAt = $updatedAt;
+                }
+
+                Log::error('GitHubProvider: Failed processing issue: '.$e->getMessage(), [
+                    'issue_number' => $issue['number'] ?? 'unknown',
+                ]);
+                GitHubIssueSyncFailed::dispatch($integration, $issue, $e);
+            }
         });
+
+        $safeSyncedAt = $earliestFailureAt ?? now();
+
+        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
+        GitHubSyncCompleted::dispatch($integration, $result);
+
+        return $result;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function sensitiveRequestFields(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function sensitiveResponseFields(): array
+    {
+        return [];
     }
 
     public function defaultSyncInterval(): int
