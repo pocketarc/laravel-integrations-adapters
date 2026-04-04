@@ -26,37 +26,96 @@ class GitHubClient
 
     private Integration $integration;
 
-    private GithubSdkClient $sdk;
+    private ?GithubSdkClient $sdk;
 
-    private string $owner;
+    private ?string $owner = null;
 
-    private string $repo;
+    private ?string $repo = null;
 
-    private string $token;
+    private ?string $token = null;
+
+    private bool $booted = false;
 
     public function __construct(Integration $integration, ?GithubSdkClient $sdk = null)
     {
-        $credentials = $integration->credentials;
-        $metadata = $integration->metadata;
+        $this->integration = $integration;
+        $this->sdk = $sdk;
+    }
 
-        if (! $credentials instanceof GitHubCredentials || ! $metadata instanceof GitHubMetadata) {
-            throw new \RuntimeException('Invalid GitHub integration: credentials or metadata type mismatch.');
+    private function boot(): void
+    {
+        if ($this->booted) {
+            return;
         }
 
-        $this->integration = $integration;
+        $this->booted = true;
+
+        $credentials = $this->integration->credentials;
+        $metadata = $this->integration->metadata;
+
+        if (! $credentials instanceof GitHubCredentials) {
+            throw new \RuntimeException(sprintf(
+                'GitHub integration (id=%s): credentials must be %s, got %s.',
+                $this->integration->id ?? 'null',
+                GitHubCredentials::class,
+                get_debug_type($credentials),
+            ));
+        }
+
+        if (! $metadata instanceof GitHubMetadata) {
+            throw new \RuntimeException(sprintf(
+                'GitHub integration (id=%s): metadata must be %s, got %s.',
+                $this->integration->id ?? 'null',
+                GitHubMetadata::class,
+                get_debug_type($metadata),
+            ));
+        }
+
         $this->owner = $metadata->owner;
         $this->repo = $metadata->repo;
         $this->token = $credentials->token;
 
-        $this->sdk = $sdk ?? new GithubSdkClient;
-        if ($sdk === null) {
+        if ($this->sdk === null) {
+            $this->sdk = new GithubSdkClient;
             $this->sdk->authenticate($this->token, null, AuthMethod::ACCESS_TOKEN);
         }
     }
 
+    private function sdk(): GithubSdkClient
+    {
+        $this->boot();
+
+        if ($this->sdk === null) {
+            throw new \RuntimeException('GitHub SDK client not initialized.');
+        }
+
+        return $this->sdk;
+    }
+
+    private function owner(): string
+    {
+        $this->boot();
+
+        return $this->owner ?? throw new \RuntimeException('GitHub owner not initialized.');
+    }
+
+    private function repo(): string
+    {
+        $this->boot();
+
+        return $this->repo ?? throw new \RuntimeException('GitHub repo not initialized.');
+    }
+
+    private function token(): string
+    {
+        $this->boot();
+
+        return $this->token ?? throw new \RuntimeException('GitHub token not initialized.');
+    }
+
     public function getSdkClient(): GithubSdkClient
     {
-        return $this->sdk;
+        return $this->sdk();
     }
 
     /**
@@ -78,10 +137,10 @@ class GitHubClient
 
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues")
                 ->withData($params)
                 ->post(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->create($this->owner, $this->repo, $params)
+                    fn (): array => $this->getIssueApi()->create($this->owner(), $this->repo(), $params)
                 ));
 
             return GitHubIssueData::createFromGitHubResponse($response);
@@ -107,9 +166,9 @@ class GitHubClient
         try {
             /** @var array<string, mixed> */
             return $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->get(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->show($this->owner, $this->repo, $issueNumber)
+                    fn (): array => $this->getIssueApi()->show($this->owner(), $this->repo(), $issueNumber)
                 ));
         } catch (\Throwable $e) {
             report($e);
@@ -134,13 +193,13 @@ class GitHubClient
         do {
             /** @var list<array<string, mixed>> $issues */
             $issues = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues?page={$page}")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues?page={$page}")
                 ->withData(['since' => $since->format('c'), 'page' => $page])
                 ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()
                     ->configure('full')
                     ->all(
-                        $this->owner,
-                        $this->repo,
+                        $this->owner(),
+                        $this->repo(),
                         [
                             'state' => 'all',
                             'since' => $since->format('c'),
@@ -180,13 +239,13 @@ class GitHubClient
         do {
             /** @var list<array<string, mixed>> $comments */
             $comments = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments?page={$page}")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
                 ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
                     ->configure('full')
                     ->all(
-                        $this->owner,
-                        $this->repo,
+                        $this->owner(),
+                        $this->repo(),
                         $issueNumber,
                         [
                             'per_page' => $perPage,
@@ -213,15 +272,15 @@ class GitHubClient
      */
     public function getIssueTimeline(int $issueNumber, callable $callback): void
     {
-        $pager = new ResultPager($this->sdk, 100);
+        $pager = new ResultPager($this->sdk(), 100);
         $page = 1;
 
         /** @var list<array<string, mixed>> $timeline */
         $timeline = $this->integration
-            ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
+            ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
             ->withData(['issue_number' => $issueNumber, 'page' => $page])
             ->get(fn () => $this->executeWithRetry(
-                fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner, $this->repo, $issueNumber])
+                fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner(), $this->repo(), $issueNumber])
             ));
 
         foreach ($timeline as $event) {
@@ -233,7 +292,7 @@ class GitHubClient
 
             /** @var list<array<string, mixed>> $timeline */
             $timeline = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/timeline?page={$page}")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
                 ->get(fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()));
 
@@ -258,7 +317,7 @@ class GitHubClient
                 || $domain === 'githubusercontent.com' || str_ends_with($domain, '.githubusercontent.com')) {
                 $headers = [
                     'Accept' => 'application/octet-stream',
-                    'Authorization' => 'Bearer '.$this->token,
+                    'Authorization' => 'Bearer '.$this->token(),
                     'X-GitHub-Api-Version' => '2022-11-28',
                 ];
             }
@@ -299,10 +358,10 @@ class GitHubClient
 
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData($params)
                 ->patch(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, $params)
+                    fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params)
                 ));
 
             return GitHubIssueData::createFromGitHubResponse($response);
@@ -321,10 +380,10 @@ class GitHubClient
         try {
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData(['state' => 'open'])
                 ->patch(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->update($this->owner, $this->repo, $issueNumber, ['state' => 'open'])
+                    fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open'])
                 ));
 
             return GitHubIssueData::createFromGitHubResponse($response);
@@ -343,10 +402,10 @@ class GitHubClient
         try {
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner}/{$this->repo}/issues/{$issueNumber}/comments")
+                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments")
                 ->withData(['body' => $comment])
                 ->post(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->comments()->create($this->owner, $this->repo, $issueNumber, ['body' => $comment])
+                    fn (): array => $this->getIssueApi()->comments()->create($this->owner(), $this->repo(), $issueNumber, ['body' => $comment])
                 ));
 
             return GitHubCommentData::createFromGitHubResponse($response);
@@ -362,7 +421,7 @@ class GitHubClient
 
     private function getIssueApi(): IssueApi
     {
-        $api = $this->sdk->api('issue');
+        $api = $this->sdk()->api('issue');
         assert($api instanceof IssueApi);
 
         return $api;
