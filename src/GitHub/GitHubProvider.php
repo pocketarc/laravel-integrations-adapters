@@ -21,6 +21,7 @@ use InvalidArgumentException;
 
 class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
+    #[\Override]
     public function name(): string
     {
         return 'GitHub';
@@ -29,6 +30,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
     /**
      * @return array<string, mixed>
      */
+    #[\Override]
     public function credentialRules(): array
     {
         return [
@@ -39,6 +41,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
     /**
      * @return array<string, mixed>
      */
+    #[\Override]
     public function metadataRules(): array
     {
         return [
@@ -50,6 +53,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
     /**
      * @return class-string<GitHubCredentials>
      */
+    #[\Override]
     public function credentialDataClass(): string
     {
         return GitHubCredentials::class;
@@ -58,16 +62,19 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
     /**
      * @return class-string<GitHubMetadata>
      */
+    #[\Override]
     public function metadataDataClass(): string
     {
         return GitHubMetadata::class;
     }
 
+    #[\Override]
     public function sync(Integration $integration): SyncResult
     {
         return $this->syncIncremental($integration, null);
     }
 
+    #[\Override]
     public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
     {
         if ($cursor !== null && ! is_string($cursor)) {
@@ -81,16 +88,16 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
         $failureCount = 0;
         $earliestFailureAt = null;
 
-        $client->getIssuesSince($since, function (array $issue) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+        $client->issues()->since($since, function (array $issue) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
             try {
                 $issueData = GitHubIssueData::createFromGitHubResponse($issue);
                 GitHubIssueSynced::dispatch($integration, $issueData);
                 $successCount++;
             } catch (\Throwable $e) {
                 $failureCount++;
-                $updatedAt = isset($issue['updated_at']) && is_string($issue['updated_at']) ? Carbon::parse($issue['updated_at']) : null;
-                if ($updatedAt !== null && ($earliestFailureAt === null || $updatedAt->isBefore($earliestFailureAt))) {
-                    $earliestFailureAt = $updatedAt;
+                $updatedAt = array_key_exists('updated_at', $issue) && is_string($issue['updated_at']) ? Carbon::parse($issue['updated_at']) : null;
+                if ($updatedAt !== null) {
+                    $earliestFailureAt = $earliestFailureAt?->min($updatedAt) ?? $updatedAt;
                 }
 
                 Log::error('GitHubProvider: Failed processing issue: '.$e->getMessage(), [
@@ -111,6 +118,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
     /**
      * @return list<string>
      */
+    #[\Override]
     public function sensitiveRequestFields(): array
     {
         return [];
@@ -119,21 +127,25 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
     /**
      * @return list<string>
      */
+    #[\Override]
     public function sensitiveResponseFields(): array
     {
         return [];
     }
 
+    #[\Override]
     public function defaultSyncInterval(): int
     {
         return 5;
     }
 
-    public function defaultRateLimit(): ?int
+    #[\Override]
+    public function defaultRateLimit(): int
     {
         return 60;
     }
 
+    #[\Override]
     public function healthCheck(Integration $integration): bool
     {
         $credentials = $integration->credentials;

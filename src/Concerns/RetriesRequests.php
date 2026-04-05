@@ -22,6 +22,9 @@ trait RetriesRequests
      * @template T
      *
      * @param  callable(): T  $callback
+     *
+     * @param-immediately-invoked-callable $callback
+     *
      * @return T
      *
      * @throws \Throwable
@@ -62,6 +65,9 @@ trait RetriesRequests
      * @template T
      *
      * @param  callable(): T  $callback
+     *
+     * @param-immediately-invoked-callable $callback
+     *
      * @param  T  $default
      * @return T
      */

@@ -8,6 +8,9 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Spatie\LaravelData\Data;
 
+use function Safe\json_decode;
+use function Safe\json_encode;
+
 class ZendeskUserData extends Data
 {
     /**
@@ -68,8 +71,7 @@ class ZendeskUserData extends Data
     public static function createFromZendeskResponse(object|array $response): self
     {
         if (is_object($response)) {
-            $encoded = json_encode($response);
-            $response = is_string($encoded) ? json_decode($encoded, true) : [];
+            $response = json_decode(json_encode($response), true);
             if (! is_array($response)) {
                 $response = [];
             }
@@ -83,7 +85,7 @@ class ZendeskUserData extends Data
             $response['email'] = (is_int($id) ? $id : 0).'@zendesk.local';
         }
 
-        if (isset($response['phone']) && ! is_string($response['phone'])) {
+        if (array_key_exists('phone', $response) && ! is_string($response['phone'])) {
             Log::warning('ZendeskUserData: Non-string phone value received', [
                 'user_id' => $response['id'] ?? null,
                 'phone_type' => get_debug_type($response['phone']),

@@ -56,7 +56,7 @@ class ZendeskClientTest extends TestCase
         $sdk = $this->createMockSdk($mockHandler);
         $client = new ZendeskClient($integration, $sdk);
 
-        $result = $client->getTicket(123);
+        $result = $client->tickets()->get(123);
 
         $this->assertInstanceOf(\stdClass::class, $result);
         $this->assertSame(123, $result->id);
@@ -72,7 +72,7 @@ class ZendeskClientTest extends TestCase
         $sdk = $this->createMockSdk($mockHandler);
         $client = new ZendeskClient($integration, $sdk);
 
-        $result = $client->getUser(456);
+        $result = $client->users()->get(456);
 
         $this->assertInstanceOf(\stdClass::class, $result);
         $this->assertSame(456, $result->id);
@@ -119,7 +119,7 @@ class ZendeskClientTest extends TestCase
         $client = new ZendeskClient($integration, $sdk);
 
         $comments = [];
-        $client->getTicketComments(123, function ($comment) use (&$comments): void {
+        $client->comments()->list(123, function ($comment) use (&$comments): void {
             $comments[] = $comment;
         });
 

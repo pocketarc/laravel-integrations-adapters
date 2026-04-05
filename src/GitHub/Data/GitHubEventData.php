@@ -65,20 +65,12 @@ class GitHubEventData extends Data
         }
 
         if ($id === null && $event === GitHubEventType::CrossReferenced && is_array($source)) {
-            $sourceIssue = $source['issue'] ?? null;
-            $sourceNumber = is_array($sourceIssue) ? ($sourceIssue['number'] ?? 0) : 0;
-            if (! is_int($sourceNumber)) {
-                $sourceNumber = 0;
-            }
-            $timestamp = Carbon::parse($createdAt)->timestamp;
-            $id = "xref-{$sourceNumber}-{$timestamp}";
-
-            $sourceType = is_string($source['type'] ?? null) ? $source['type'] : null;
-
-            if (is_array($sourceIssue)) {
-                $url = is_string($sourceIssue['url'] ?? null) ? $sourceIssue['url'] : '';
-                $nodeId = is_string($sourceIssue['node_id'] ?? null) ? $sourceIssue['node_id'] : '';
-            }
+            $resolved = self::resolveCrossReference($source, $createdAt, $url, $nodeId);
+            $id = $resolved['id'];
+            $url = $resolved['url'];
+            $nodeId = $resolved['node_id'];
+            $sourceType = $resolved['source_type'];
+            $sourceNumber = $resolved['source_number'];
         }
 
         $idValue = $id ?? 'unknown';
@@ -89,6 +81,28 @@ class GitHubEventData extends Data
         $data['source_number'] = $sourceNumber;
 
         return self::from($data);
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $source
+     * @return array{id: string, url: string, node_id: string, source_type: string|null, source_number: int}
+     */
+    private static function resolveCrossReference(array $source, string $createdAt, string $fallbackUrl, string $fallbackNodeId): array
+    {
+        $sourceIssue = is_array($source['issue'] ?? null) ? $source['issue'] : [];
+        $sourceNumber = is_int($sourceIssue['number'] ?? null) ? $sourceIssue['number'] : 0;
+        $timestamp = Carbon::parse($createdAt)->timestamp;
+
+        $url = is_string($sourceIssue['url'] ?? null) ? $sourceIssue['url'] : $fallbackUrl;
+        $nodeId = is_string($sourceIssue['node_id'] ?? null) ? $sourceIssue['node_id'] : $fallbackNodeId;
+
+        return [
+            'id' => "xref-{$sourceNumber}-{$timestamp}",
+            'url' => $url,
+            'node_id' => $nodeId,
+            'source_type' => is_string($source['type'] ?? null) ? $source['type'] : null,
+            'source_number' => $sourceNumber,
+        ];
     }
 
     public function formatDescription(): string

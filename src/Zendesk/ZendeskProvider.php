@@ -22,6 +22,7 @@ use InvalidArgumentException;
 
 class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
+    #[\Override]
     public function name(): string
     {
         return 'Zendesk';
@@ -30,6 +31,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return array<string, mixed>
      */
+    #[\Override]
     public function credentialRules(): array
     {
         return [
@@ -41,6 +43,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return array<string, mixed>
      */
+    #[\Override]
     public function metadataRules(): array
     {
         return [
@@ -52,6 +55,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return class-string<ZendeskCredentials>
      */
+    #[\Override]
     public function credentialDataClass(): string
     {
         return ZendeskCredentials::class;
@@ -60,16 +64,19 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return class-string<ZendeskMetadata>
      */
+    #[\Override]
     public function metadataDataClass(): string
     {
         return ZendeskMetadata::class;
     }
 
+    #[\Override]
     public function sync(Integration $integration): SyncResult
     {
         return $this->syncIncremental($integration, null);
     }
 
+    #[\Override]
     public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
     {
         if ($cursor !== null && ! is_string($cursor)) {
@@ -83,7 +90,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         $failureCount = 0;
         $earliestFailureAt = null;
 
-        $client->getTicketsSince($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
             try {
                 ZendeskTicketSynced::dispatch($integration, $ticket, $user);
                 $successCount++;
@@ -111,6 +118,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return list<string>
      */
+    #[\Override]
     public function sensitiveRequestFields(): array
     {
         return [];
@@ -119,21 +127,25 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return list<string>
      */
+    #[\Override]
     public function sensitiveResponseFields(): array
     {
         return [];
     }
 
+    #[\Override]
     public function defaultSyncInterval(): int
     {
         return 5;
     }
 
-    public function defaultRateLimit(): ?int
+    #[\Override]
+    public function defaultRateLimit(): int
     {
         return 100;
     }
 
+    #[\Override]
     public function healthCheck(Integration $integration): bool
     {
         $credentials = $integration->credentials;
