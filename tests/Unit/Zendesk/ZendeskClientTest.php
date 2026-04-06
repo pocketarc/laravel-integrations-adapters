@@ -9,6 +9,8 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 use Integrations\Adapters\Tests\TestCase;
+use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
+use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
 use Integrations\Adapters\Zendesk\ZendeskClient;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
 use Integrations\Models\Integration;
@@ -39,6 +41,84 @@ class ZendeskClientTest extends TestCase
         return $sdk;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function fakeTicket(): array
+    {
+        return [
+            'id' => 123,
+            'url' => 'https://acme.zendesk.com/api/v2/tickets/123.json',
+            'external_id' => null,
+            'subject' => 'Test ticket',
+            'raw_subject' => 'Test ticket',
+            'description' => 'Test ticket description',
+            'status' => 'open',
+            'type' => null,
+            'priority' => null,
+            'custom_status_id' => 0,
+            'requester_id' => 1,
+            'submitter_id' => 1,
+            'assignee_id' => null,
+            'organization_id' => null,
+            'group_id' => 1,
+            'brand_id' => null,
+            'forum_topic_id' => null,
+            'problem_id' => null,
+            'created_at' => '2026-01-01T00:00:00Z',
+            'updated_at' => '2026-01-01T00:00:00Z',
+            'due_at' => null,
+            'generated_timestamp' => 1735689600,
+            'via' => ['channel' => 'web', 'source' => []],
+            'custom_fields' => [],
+            'has_incidents' => false,
+            'is_public' => true,
+            'allow_channelback' => false,
+            'allow_attachments' => true,
+            'from_messaging_channel' => false,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fakeUser(): array
+    {
+        return [
+            'id' => 456,
+            'url' => 'https://acme.zendesk.com/api/v2/users/456.json',
+            'name' => 'Test User',
+            'email' => 'user@test.com',
+            'external_id' => null,
+            'active' => true,
+            'suspended' => false,
+            'verified' => true,
+            'role' => 'end-user',
+            'role_type' => null,
+            'custom_role_id' => null,
+            'moderator' => false,
+            'ticket_restriction' => 'requested',
+            'only_private_comments' => false,
+            'restricted_agent' => true,
+            'organization_id' => null,
+            'default_group_id' => null,
+            'phone' => null,
+            'shared_phone_number' => null,
+            'photo' => null,
+            'time_zone' => 'UTC',
+            'iana_time_zone' => 'Etc/UTC',
+            'locale_id' => 1,
+            'locale' => 'en-US',
+            'created_at' => '2026-01-01T00:00:00Z',
+            'updated_at' => '2026-01-01T00:00:00Z',
+            'last_login_at' => null,
+            'two_factor_auth_enabled' => null,
+            'shared' => false,
+            'shared_agent' => false,
+            'report_csv' => false,
+        ];
+    }
+
     private function jsonResponse(mixed $data, int $status = 200): Response
     {
         $json = json_encode($data);
@@ -46,10 +126,10 @@ class ZendeskClientTest extends TestCase
         return new Response($status, ['Content-Type' => 'application/json'], is_string($json) ? $json : '{}');
     }
 
-    public function test_get_ticket_returns_stdclass(): void
+    public function test_get_ticket_returns_ticket_data(): void
     {
         $mockHandler = new MockHandler([
-            $this->jsonResponse(['ticket' => ['id' => 123, 'subject' => 'Test ticket']]),
+            $this->jsonResponse(['ticket' => $this->fakeTicket()]),
         ]);
 
         $integration = $this->createIntegrationModel();
@@ -58,14 +138,15 @@ class ZendeskClientTest extends TestCase
 
         $result = $client->tickets()->get(123);
 
-        $this->assertInstanceOf(\stdClass::class, $result);
+        $this->assertInstanceOf(ZendeskTicketData::class, $result);
         $this->assertSame(123, $result->id);
+        $this->assertSame('Test ticket', $result->subject);
     }
 
-    public function test_get_user_returns_stdclass(): void
+    public function test_get_user_returns_user_data(): void
     {
         $mockHandler = new MockHandler([
-            $this->jsonResponse(['user' => ['id' => 456, 'name' => 'Test User', 'email' => 'user@test.com']]),
+            $this->jsonResponse(['user' => $this->fakeUser()]),
         ]);
 
         $integration = $this->createIntegrationModel();
@@ -74,8 +155,9 @@ class ZendeskClientTest extends TestCase
 
         $result = $client->users()->get(456);
 
-        $this->assertInstanceOf(\stdClass::class, $result);
+        $this->assertInstanceOf(ZendeskUserData::class, $result);
         $this->assertSame(456, $result->id);
+        $this->assertSame('Test User', $result->name);
     }
 
     public function test_get_ticket_comments_calls_callback_per_comment(): void

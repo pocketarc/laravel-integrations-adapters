@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk\Resources;
 
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Integrations\Adapters\Zendesk\Data\ZendeskIncrementalTicketResponse;
+use Integrations\Adapters\Zendesk\Data\ZendeskSearchResponse;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
 use Integrations\Adapters\Zendesk\Enums\ZendeskStatus;
@@ -14,15 +15,13 @@ use Integrations\Adapters\Zendesk\ZendeskResource;
 use stdClass;
 use Zendesk\API\Http;
 
-use function Safe\parse_url;
-
 class ZendeskTickets extends ZendeskResource
 {
-    public function get(int $ticketId): ?stdClass
+    public function get(int $ticketId): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): ?stdClass {
+        return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
             $result = $this->integration
-                ->to("tickets/{$ticketId}.json")
+                ->toAs("tickets/{$ticketId}.json", ZendeskTicketData::class)
                 ->get(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->find($ticketId);
                     $ticket = $response->ticket ?? null;
@@ -30,7 +29,7 @@ class ZendeskTickets extends ZendeskResource
                     return $ticket instanceof stdClass ? $ticket : null;
                 });
 
-            return $result instanceof stdClass ? $result : null;
+            return $result instanceof ZendeskTicketData ? $result : null;
         });
     }
 
@@ -38,12 +37,13 @@ class ZendeskTickets extends ZendeskResource
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
             $result = $this->integration
-                ->to("tickets/{$ticketId}.json")
+                ->toAs("tickets/{$ticketId}.json", ZendeskTicketData::class)
                 ->withData(['status' => ZendeskStatus::Solved->value])
-                ->put(function () use ($ticketId): ?ZendeskTicketData {
+                ->put(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
+                    $ticket = $response->ticket ?? null;
 
-                    return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+                    return $ticket instanceof stdClass ? $ticket : null;
                 });
 
             return $result instanceof ZendeskTicketData ? $result : null;
@@ -54,12 +54,13 @@ class ZendeskTickets extends ZendeskResource
     {
         return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
             $result = $this->integration
-                ->to("tickets/{$ticketId}.json")
+                ->toAs("tickets/{$ticketId}.json", ZendeskTicketData::class)
                 ->withData(['status' => ZendeskStatus::Open->value])
-                ->put(function () use ($ticketId): ?ZendeskTicketData {
+                ->put(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
+                    $ticket = $response->ticket ?? null;
 
-                    return $response instanceof stdClass ? $this->ticketDataFromResponse($response) : null;
+                    return $ticket instanceof stdClass ? $ticket : null;
                 });
 
             return $result instanceof ZendeskTicketData ? $result : null;
@@ -99,60 +100,43 @@ class ZendeskTickets extends ZendeskResource
     public function since(\DateTimeInterface $startTime, callable $callback): void
     {
         $timestamp = $startTime->getTimestamp();
+        $originalBasePath = $this->sdk()->getApiBasePath();
 
-        do {
-            $start = Carbon::createFromTimestamp($timestamp);
-            Log::info("ZendeskTickets: Fetching tickets since start_time={$start->toDateTimeString()}");
+        try {
+            do {
+                $this->sdk()->setApiBasePath('api/v2/');
 
-            $this->sdk()->setApiBasePath('api/v2/');
+                $response = $this->integration
+                    ->toAs("incremental/tickets.json?start_time={$timestamp}", ZendeskIncrementalTicketResponse::class)
+                    ->withData(['start_time' => $timestamp])
+                    ->get(fn () => Http::send(
+                        $this->sdk(),
+                        'incremental/tickets.json',
+                        [
+                            'queryParams' => [
+                                'start_time' => $timestamp,
+                                'include' => 'users',
+                            ],
+                        ]
+                    ));
 
-            $response = $this->integration
-                ->to("incremental/tickets.json?start_time={$timestamp}")
-                ->withData(['start_time' => $timestamp])
-                ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => Http::send(
-                    $this->sdk(),
-                    'incremental/tickets.json',
-                    [
-                        'queryParams' => [
-                            'start_time' => $timestamp,
-                            'include' => 'users',
-                        ],
-                    ]
-                )));
+                if (! $response instanceof ZendeskIncrementalTicketResponse || $response->tickets->isEmpty()) {
+                    break;
+                }
 
-            if (! $response instanceof stdClass) {
-                Log::warning('ZendeskTickets: API returned null response, breaking loop');
-                break;
-            }
+                $this->dispatchTickets($response->tickets, $response->users->keyBy('id'), $callback);
 
-            /** @var list<object> $usersArray */
-            $usersArray = is_array($response->users) ? $response->users : [];
-            /** @var list<object> $ticketsArray */
-            $ticketsArray = is_array($response->tickets) ? $response->tickets : [];
+                $newTimestamp = $response->nextTimestamp();
 
-            Log::info('ZendeskTickets: API response received', [
-                'tickets_count' => count($ticketsArray),
-                'users_count' => count($usersArray),
-                'has_next_page' => $response->next_page !== null,
-            ]);
-
-            if (count($ticketsArray) === 0) {
-                break;
-            }
-
-            $users = self::buildUsersMap($usersArray);
-            $this->processTicketObjects($ticketsArray, $users, $callback);
-
-            $newTimestamp = is_string($response->next_page)
-                ? $this->extractTimestampFromUrl($response->next_page)
-                : null;
-
-            if ($newTimestamp !== null && $newTimestamp > $timestamp) {
-                $timestamp = $newTimestamp;
-            } else {
-                break;
-            }
-        } while (true);
+                if ($newTimestamp !== null && $newTimestamp > $timestamp) {
+                    $timestamp = $newTimestamp;
+                } else {
+                    break;
+                }
+            } while (true);
+        } finally {
+            $this->sdk()->setApiBasePath($originalBasePath);
+        }
     }
 
     /**
@@ -166,152 +150,94 @@ class ZendeskTickets extends ZendeskResource
     public function newerThan(int $minId, callable $callback): void
     {
         $page = 1;
+        $originalBasePath = $this->sdk()->getApiBasePath();
 
-        do {
-            $this->sdk()->setApiBasePath('api/v2/');
+        try {
+            do {
+                $this->sdk()->setApiBasePath('api/v2/');
 
-            $response = $this->integration
-                ->to("search.json?page={$page}")
-                ->withData(['min_id' => $minId, 'page' => $page])
-                ->get(fn () => $this->executeWithRetry(fn (): ?stdClass => Http::send(
-                    $this->sdk(),
-                    'search.json',
-                    [
-                        'queryParams' => [
-                            'query' => 'type:ticket',
-                            'sort_by' => 'created_at',
-                            'sort_order' => 'desc',
-                            'page' => $page,
-                            'include' => 'tickets(users)',
-                        ],
-                    ]
-                )));
+                $response = $this->integration
+                    ->toAs("search.json?page={$page}", ZendeskSearchResponse::class)
+                    ->withData(['min_id' => $minId, 'page' => $page])
+                    ->get(fn () => Http::send(
+                        $this->sdk(),
+                        'search.json',
+                        [
+                            'queryParams' => [
+                                'query' => 'type:ticket',
+                                'sort_by' => 'created_at',
+                                'sort_order' => 'desc',
+                                'page' => $page,
+                                'include' => 'tickets(users)',
+                            ],
+                        ]
+                    ));
 
-            if (! $response instanceof stdClass) {
-                break;
-            }
+                if (! $response instanceof ZendeskSearchResponse) {
+                    break;
+                }
 
-            /** @var list<object> $resultsArray */
-            $resultsArray = is_array($response->results) ? $response->results : [];
+                $users = $response->users->keyBy('id');
 
-            /** @var list<object> $usersArray */
-            $usersArray = property_exists($response, 'users') && is_array($response->users) ? $response->users : [];
-            $users = self::buildUsersMap($usersArray);
+                if ($this->dispatchTicketsNewerThan($response->results, $users, $minId, $callback)) {
+                    break;
+                }
 
-            $reachedOlderTickets = $this->processTicketsNewerThan($resultsArray, $users, $minId, $callback);
-            if ($reachedOlderTickets) {
-                break;
-            }
-
-            $hasNextPage = $response->next_page !== null;
-            $page++;
-        } while ($hasNextPage);
+                $hasNextPage = $response->next_page !== null;
+                $page++;
+            } while ($hasNextPage);
+        } finally {
+            $this->sdk()->setApiBasePath($originalBasePath);
+        }
     }
 
     /**
-     * Process ticket objects, invoking the callback only for tickets newer than $minId.
-     * Returns true if an older ticket was encountered (signalling pagination should stop).
-     *
-     * @param  list<object>  $ticketObjects
+     * @param  Collection<int, ZendeskTicketData>  $tickets
      * @param  Collection<int|string, ZendeskUserData>  $users
      * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
      *
      * @param-immediately-invoked-callable $callback
      */
-    private function processTicketsNewerThan(array $ticketObjects, Collection $users, int $minId, callable $callback): bool
+    private function dispatchTickets(Collection $tickets, Collection $users, callable $callback): void
     {
-        $foundOlderTicket = false;
-
-        foreach ($ticketObjects as $ticketObj) {
+        foreach ($tickets as $ticket) {
             try {
-                $ticketArray = $this->objectToNormalizedArray($ticketObj);
-                if ($ticketArray === null) {
-                    continue;
-                }
-                $ticket = ZendeskTicketData::from($ticketArray);
+                $user = $users[$ticket->requester_id] ?? null;
+                $callback($ticket, $user instanceof ZendeskUserData ? $user : null);
+            } catch (\Throwable $e) {
+                Log::error("ZendeskTickets: Failed processing ticket {$ticket->id}: {$e->getMessage()}");
+            }
+        }
+    }
 
+    /**
+     * Dispatch tickets newer than $minId. Returns true if an older ticket was encountered.
+     *
+     * @param  Collection<int, ZendeskTicketData>  $tickets
+     * @param  Collection<int|string, ZendeskUserData>  $users
+     * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
+     *
+     * @param-immediately-invoked-callable $callback
+     */
+    private function dispatchTicketsNewerThan(Collection $tickets, Collection $users, int $minId, callable $callback): bool
+    {
+        $reachedOlderTickets = false;
+
+        foreach ($tickets as $ticket) {
+            try {
                 if ($ticket->id <= $minId) {
-                    $foundOlderTicket = true;
+                    $reachedOlderTickets = true;
 
                     continue;
                 }
 
                 $user = $users[$ticket->requester_id] ?? null;
-                $callback($ticket, $user);
+                $callback($ticket, $user instanceof ZendeskUserData ? $user : null);
             } catch (\Throwable $e) {
-                self::logTicketProcessingError($e, $ticketArray ?? null);
+                Log::error("ZendeskTickets: Failed processing ticket {$ticket->id}: {$e->getMessage()}");
             }
         }
 
-        return $foundOlderTicket;
-    }
-
-    private function ticketDataFromResponse(stdClass $response): ?ZendeskTicketData
-    {
-        $ticket = $response->ticket ?? null;
-        if (! $ticket instanceof stdClass) {
-            return null;
-        }
-
-        $ticketArray = $this->objectToNormalizedArray($ticket);
-        if ($ticketArray === null) {
-            return null;
-        }
-
-        return ZendeskTicketData::from($ticketArray);
-    }
-
-    /**
-     * @param  list<object>  $ticketObjects
-     * @param  Collection<int|string, ZendeskUserData>  $users
-     * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
-     *
-     * @param-immediately-invoked-callable $callback
-     */
-    private function processTicketObjects(array $ticketObjects, Collection $users, callable $callback): void
-    {
-        foreach ($ticketObjects as $ticketObj) {
-            try {
-                $ticketArray = $this->objectToNormalizedArray($ticketObj);
-                if ($ticketArray === null) {
-                    continue;
-                }
-                $ticket = ZendeskTicketData::from($ticketArray);
-                $user = $users[$ticket->requester_id] ?? null;
-
-                $callback($ticket, $user);
-            } catch (\Throwable $e) {
-                self::logTicketProcessingError($e, $ticketArray ?? null);
-            }
-        }
-    }
-
-    /**
-     * @param  list<object>  $usersArray
-     * @return Collection<int|string, ZendeskUserData>
-     */
-    private static function buildUsersMap(array $usersArray): Collection
-    {
-        return collect($usersArray)
-            ->keyBy('id')
-            ->map(fn (object $user): ZendeskUserData => ZendeskUserData::createFromZendeskResponse($user));
-    }
-
-    private function extractTimestampFromUrl(string $url): ?int
-    {
-        $query = parse_url($url)['query'] ?? '';
-        $queryString = is_string($query) ? $query : '';
-        parse_str($queryString, $queryParams);
-
-        return array_key_exists('start_time', $queryParams) && is_numeric($queryParams['start_time'])
-            ? (int) $queryParams['start_time']
-            : null;
-    }
-
-    private static function logTicketProcessingError(\Throwable $e, mixed $ticketArray): void
-    {
-        $rawId = is_array($ticketArray) ? ($ticketArray['id'] ?? null) : null;
-        $failedId = is_int($rawId) || is_string($rawId) ? (string) $rawId : 'unknown';
-        Log::error("ZendeskTickets: Failed processing ticket {$failedId}: {$e->getMessage()}");
+        return $reachedOlderTickets;
     }
 }

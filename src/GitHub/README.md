@@ -43,7 +43,7 @@ $client = new GitHubClient($integration);
 | `addComment($number, $body)`           | Add a comment to an issue.                                                 |
 | `downloadGitHubAsset($url)`            | Download an asset with token auth for GitHub-hosted URLs.                  |
 
-All methods go through `Integration::request()` internally, so every API call is logged, health-tracked, and rate-limited.
+All methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. The provider implements `CustomizesRetry` so the core handles retry for GitHub SDK exceptions (rate limits, server errors, connection failures) with method-aware defaults (GET = 3 attempts, non-GET = 1).
 
 ## Sync
 
@@ -61,13 +61,13 @@ Defaults: 5-minute sync interval, 60 requests/minute rate limit.
 
 ## Data classes
 
-| Class                  | Description                                                                                                            |
-|------------------------|------------------------------------------------------------------------------------------------------------------------|
-| `GitHubIssueData`      | Issue with body, state, user, labels, assignees, attachments (extracted from body HTML). Stores original API response. |
-| `GitHubCommentData`    | Comment with body, user, attachments. Stores original API response.                                                    |
-| `GitHubEventData`      | Timeline event (label, assignment, close, etc.) with formatted descriptions.                                           |
-| `GitHubUserData`       | User with login, avatar, name, email.                                                                                  |
-| `GitHubAttachmentData` | Attachment URL extracted from issue/comment HTML body.                                                                 |
+| Class                  | Description                                                                                                                                       |
+|------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GitHubIssueData`      | Issue with body, state, user, labels, assignees, attachments (extracted from body HTML via `prepareForPipeline()`). Stores original API response. |
+| `GitHubCommentData`    | Comment with body, user, attachments (extracted from body HTML via `prepareForPipeline()`). Stores original API response.                         |
+| `GitHubEventData`      | Timeline event (label, assignment, close, etc.) with formatted descriptions. Handles cross-reference ID synthesis via `prepareForPipeline()`.     |
+| `GitHubUserData`       | User with login, avatar, name, email.                                                                                                             |
+| `GitHubAttachmentData` | Attachment URL extracted from issue/comment HTML body.                                                                                            |
 
 ## Enums
 

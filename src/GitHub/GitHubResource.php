@@ -6,15 +6,12 @@ namespace Integrations\Adapters\GitHub;
 
 use Github\Api\Issue as IssueApi;
 use Github\Client as GithubSdkClient;
-use Github\Exception\ApiLimitExceedException;
-use Github\Exception\RuntimeException;
-use GuzzleHttp\Exception\ConnectException;
-use Integrations\Adapters\Concerns\RetriesRequests;
+use Integrations\Adapters\Concerns\HandlesErrors;
 use Integrations\Models\Integration;
 
 abstract class GitHubResource
 {
-    use RetriesRequests;
+    use HandlesErrors;
 
     public function __construct(
         protected readonly Integration $integration,
@@ -44,38 +41,10 @@ abstract class GitHubResource
     protected function getIssueApi(): IssueApi
     {
         $api = $this->sdk()->api('issue');
-        assert($api instanceof IssueApi);
+        if (! $api instanceof IssueApi) {
+            throw new \RuntimeException('Expected IssueApi, got '.get_debug_type($api));
+        }
 
         return $api;
-    }
-
-    /**
-     * @return array{int, string}|null
-     */
-    #[\Override]
-    protected function getRetryDelay(\Throwable $e, int $attempt): ?array
-    {
-        if ($e instanceof ConnectException) {
-            return [(int) min(2 ** $attempt, 60), "Connection error: {$e->getMessage()}"];
-        }
-
-        if ($e instanceof ApiLimitExceedException) {
-            return [min(max($e->getResetTime() - time(), 1), 60), 'Rate limit exceeded'];
-        }
-
-        if ($e instanceof RuntimeException && self::isRetryableHttpError($e)) {
-            return [(int) min(2 ** $attempt, 60), "HTTP {$e->getCode()} error"];
-        }
-
-        return null;
-    }
-
-    private static function isRetryableHttpError(RuntimeException $e): bool
-    {
-        $statusCode = $e->getCode();
-
-        return ($statusCode === 403 && str_contains($e->getMessage(), 'throttl'))
-            || $statusCode === 429
-            || ($statusCode >= 500 && $statusCode < 600);
     }
 }

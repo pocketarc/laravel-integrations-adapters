@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace Integrations\Adapters\GitHub\Resources;
 
 use Illuminate\Support\Facades\Http;
+use Integrations\Adapters\Concerns\ValidatesUrls;
 use Integrations\Adapters\GitHub\GitHubResource;
 
 use function Safe\parse_url;
 
 class GitHubAssets extends GitHubResource
 {
+    use ValidatesUrls;
+
     public function download(string $url): ?string
     {
+        self::assertUrlNotPrivate($url);
+
         return $this->executeWithErrorHandling(function () use ($url): ?string {
             $headers = self::isGitHubDomain($url) ? [
                 'Accept' => 'application/octet-stream',

@@ -26,7 +26,7 @@ class GitHubComments extends GitHubResource
             $comments = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()->comments()
+                ->get(fn (): array => $this->getIssueApi()->comments()
                     ->configure('full')
                     ->all(
                         $this->owner(),
@@ -36,7 +36,7 @@ class GitHubComments extends GitHubResource
                             'per_page' => $perPage,
                             'page' => $page,
                         ]
-                    )));
+                    ));
 
             if ($comments === []) {
                 break;
@@ -57,11 +57,9 @@ class GitHubComments extends GitHubResource
             $response = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments")
                 ->withData(['body' => $comment])
-                ->post(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->comments()->create($this->owner(), $this->repo(), $issueNumber, ['body' => $comment])
-                ));
+                ->post(fn (): array => $this->getIssueApi()->comments()->create($this->owner(), $this->repo(), $issueNumber, ['body' => $comment]));
 
-            return GitHubCommentData::createFromGitHubResponse($response);
+            return GitHubCommentData::from($response);
         });
     }
 }

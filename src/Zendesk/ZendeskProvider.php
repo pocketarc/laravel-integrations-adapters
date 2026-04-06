@@ -107,7 +107,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             }
         });
 
-        $safeSyncedAt = $earliestFailureAt ?? now();
+        $safeSyncedAt = $this->resolveSyncCursor($earliestFailureAt, $failureCount, $since);
 
         $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         ZendeskSyncCompleted::dispatch($integration, $result);
@@ -167,5 +167,14 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since): Carbon
+    {
+        if ($earliestFailureAt !== null) {
+            return $earliestFailureAt;
+        }
+
+        return $failureCount > 0 ? $since : now();
     }
 }

@@ -34,24 +34,22 @@ class GitHubCommentData extends Data
     ) {}
 
     /**
-     * Create from GitHub API response.
-     * Extracts attachments from body HTML.
-     *
-     * @param  array<string, mixed>  $data
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
      */
-    public static function createFromGitHubResponse(array $data): self
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
     {
-        $original = $data;
+        $properties['original'] ??= $properties;
 
-        $body = is_string($data['body'] ?? null) ? $data['body'] : '';
-        $bodyHtml = is_string($data['body_html'] ?? null) ? $data['body_html'] : '';
+        $body = is_string($properties['body'] ?? null) ? $properties['body'] : '';
+        $bodyHtml = is_string($properties['body_html'] ?? null) ? $properties['body_html'] : '';
 
-        $data['attachments'] = GitHubAttachmentData::extractFromContent($bodyHtml, $body)
+        $properties['attachments'] = GitHubAttachmentData::extractFromContent($bodyHtml, $body)
             ->map(fn (GitHubAttachmentData $a) => $a->toArray())
             ->toArray();
-        $data['body'] = $body;
-        $data['original'] = $original;
+        $properties['body'] = $body;
 
-        return self::from($data);
+        return $properties;
     }
 }

@@ -49,7 +49,7 @@ $client = new ZendeskClient($integration);
 | `downloadAttachment($url)`                        | Download an attachment by content URL.                                                                         |
 | `getFreshAttachmentUrl($ticketId, $attachmentId)` | Get a fresh (non-expired) content URL for an attachment.                                                       |
 
-All methods go through `Integration::request()` internally, so every API call is logged, health-tracked, and rate-limited.
+All methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
 
 ## Sync
 
@@ -67,17 +67,21 @@ Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 
 ## Data classes
 
-| Class                           | Description                                                                                                                                                                         |
-|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `ZendeskTicketData`             | Ticket with status, requester, assignee, custom fields, satisfaction rating, tags. Stores original API response.                                                                    |
-| `ZendeskCommentData`            | Comment with body (plain/HTML), attachments, via channel. Has `hasAttachments()` and `getImageAttachments()` helpers. Stores original API response.                                 |
-| `ZendeskUserData`               | User with role, org, locale, timezone, phone, photo. Created via `createFromZendeskResponse()` which handles email fallback for users without emails. Stores original API response. |
-| `ZendeskAttachmentData`         | Attachment with file name, content type, size, dimensions, malware scan result, thumbnails.                                                                                         |
-| `ZendeskCustomFieldData`        | Custom field ID + value pair.                                                                                                                                                       |
-| `ZendeskViaData`                | Channel and source info (how the ticket/comment was created).                                                                                                                       |
-| `ZendeskSatisfactionRatingData` | Satisfaction survey score.                                                                                                                                                          |
-| `ZendeskPhotoData`              | User profile photo with thumbnails.                                                                                                                                                 |
-| `ZendeskThumbnailData`          | Thumbnail image for attachments/photos.                                                                                                                                             |
+| Class                              | Description                                                                                                                                                    |
+|------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ZendeskTicketData`                | Ticket with status, requester, assignee, custom fields, satisfaction rating, tags. Stores original API response.                                               |
+| `ZendeskCommentData`               | Comment with body (plain/HTML), attachments, via channel. Has `hasAttachments()` and `getImageAttachments()` helpers. Stores original API response.            |
+| `ZendeskUserData`                  | User with role, org, locale, timezone, phone, photo. Handles email fallback for users without emails via `prepareForPipeline()`. Stores original API response. |
+| `ZendeskAttachmentData`            | Attachment with file name, content type, size, dimensions, malware scan result, thumbnails.                                                                    |
+| `ZendeskCustomFieldData`           | Custom field ID + value pair.                                                                                                                                  |
+| `ZendeskViaData`                   | Channel and source info (how the ticket/comment was created). Normalizes integer channel values to strings via `prepareForPipeline()`.                         |
+| `ZendeskSatisfactionRatingData`    | Satisfaction survey score.                                                                                                                                     |
+| `ZendeskPhotoData`                 | User profile photo with thumbnails.                                                                                                                            |
+| `ZendeskThumbnailData`             | Thumbnail image for attachments/photos.                                                                                                                        |
+| `ZendeskIncrementalTicketResponse` | Typed response for the incremental tickets API. Contains `tickets`, `users`, `next_page`, `count`. Has `nextTimestamp()` for pagination.                       |
+| `ZendeskSearchResponse`            | Typed response for the search API. Contains `results` (tickets), `users`, `next_page`.                                                                         |
+| `ZendeskCommentPageResponse`       | Typed response for the comments endpoint. Contains `comments` and `meta` (pagination).                                                                         |
+| `ZendeskPaginationMeta`            | Cursor pagination metadata with `has_more` and `after_cursor`.                                                                                                 |
 
 ## Enums
 

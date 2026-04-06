@@ -11,11 +11,11 @@ use stdClass;
 
 class ZendeskUsers extends ZendeskResource
 {
-    public function get(int $userId): ?stdClass
+    public function get(int $userId): ?ZendeskUserData
     {
-        return $this->executeWithErrorHandling(function () use ($userId): ?stdClass {
+        return $this->executeWithErrorHandling(function () use ($userId): ?ZendeskUserData {
             $result = $this->integration
-                ->to("users/{$userId}.json")
+                ->toAs("users/{$userId}.json", ZendeskUserData::class)
                 ->get(function () use ($userId): ?stdClass {
                     $response = $this->sdk()->users()->find($userId);
                     $user = $response->user ?? null;
@@ -23,7 +23,7 @@ class ZendeskUsers extends ZendeskResource
                     return $user instanceof stdClass ? $user : null;
                 });
 
-            return $result instanceof stdClass ? $result : null;
+            return $result instanceof ZendeskUserData ? $result : null;
         });
     }
 
@@ -50,7 +50,7 @@ class ZendeskUsers extends ZendeskResource
                     if (! is_object($user)) {
                         continue;
                     }
-                    $data = ZendeskUserData::createFromZendeskResponse($user);
+                    $data = ZendeskUserData::from($user);
                     if ($callback !== null) {
                         $callback($data);
                     }

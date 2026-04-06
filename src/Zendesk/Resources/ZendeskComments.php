@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Zendesk\Resources;
 
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
+use Integrations\Adapters\Zendesk\Data\ZendeskCommentPageResponse;
 use Integrations\Adapters\Zendesk\ZendeskResource;
 use stdClass;
+
+use function Safe\json_decode;
+use function Safe\json_encode;
 
 class ZendeskComments extends ZendeskResource
 {
@@ -23,30 +27,20 @@ class ZendeskComments extends ZendeskResource
         $params = ['page[size]' => 100];
 
         do {
-            $commentsResponse = $this->integration
-                ->to("tickets/{$ticketId}/comments.json")
+            $response = $this->integration
+                ->toAs("tickets/{$ticketId}/comments.json", ZendeskCommentPageResponse::class)
                 ->withData($params)
-                ->get(fn () => $this->executeWithRetry(
-                    fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params)
-                ));
+                ->get(fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params));
 
-            if (! $commentsResponse instanceof stdClass || ! property_exists($commentsResponse, 'comments') || ! is_array($commentsResponse->comments)) {
+            if (! $response instanceof ZendeskCommentPageResponse) {
                 return;
             }
 
-            foreach ($commentsResponse->comments as $commentObj) {
-                if (! is_object($commentObj)) {
-                    continue;
-                }
-                $commentArray = $this->objectToNormalizedArray($commentObj);
-                if ($commentArray === null) {
-                    continue;
-                }
-                $comment = ZendeskCommentData::from($commentArray);
+            foreach ($response->comments as $comment) {
                 $callback($comment);
             }
 
-            $cursor = $this->getNextCursor($commentsResponse);
+            $cursor = $response->meta->has_more ? $response->meta->after_cursor : null;
             if ($cursor !== null) {
                 $params['page[after]'] = $cursor;
             }
@@ -120,12 +114,19 @@ class ZendeskComments extends ZendeskResource
                 continue;
             }
 
-            $commentArray = $this->objectToNormalizedArray($event);
-            if ($commentArray === null) {
+            $commentArray = json_decode(json_encode($event), true);
+            if (! is_array($commentArray)) {
                 continue;
             }
 
             $commentArray['audit_id'] = $auditId;
+            $commentArray['created_at'] ??= $audit->created_at ?? null;
+            $commentArray['metadata'] ??= is_object($audit->metadata ?? null)
+                ? json_decode(json_encode($audit->metadata), true)
+                : [];
+            $commentArray['via'] ??= is_object($audit->via ?? null)
+                ? json_decode(json_encode($audit->via), true)
+                : ['channel' => 'api', 'source' => []];
 
             return ZendeskCommentData::from($commentArray);
         }

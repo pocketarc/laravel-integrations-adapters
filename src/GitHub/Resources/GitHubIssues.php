@@ -34,11 +34,9 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues")
                 ->withData($params)
-                ->post(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->create($this->owner(), $this->repo(), $params)
-                ));
+                ->post(fn (): array => $this->getIssueApi()->create($this->owner(), $this->repo(), $params));
 
-            return GitHubIssueData::createFromGitHubResponse($response);
+            return GitHubIssueData::from($response);
         } catch (\Throwable $e) {
             if (str_contains($e->getMessage(), 'permission to create labels') && $labels !== []) {
                 $labelList = implode(', ', array_map(fn (string $l): string => "\"{$l}\"", $labels));
@@ -61,9 +59,7 @@ class GitHubIssues extends GitHubResource
         /** @var array<string, mixed>|null */
         return $this->executeWithErrorHandling(fn () => $this->integration
             ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
-            ->get(fn () => $this->executeWithRetry(
-                fn (): array => $this->getIssueApi()->show($this->owner(), $this->repo(), $issueNumber)
-            )));
+            ->get(fn (): array => $this->getIssueApi()->show($this->owner(), $this->repo(), $issueNumber)));
     }
 
     public function close(int $issueNumber, ?GitHubIssueStateReason $stateReason = null): ?GitHubIssueData
@@ -83,11 +79,9 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData($params)
-                ->patch(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params)
-                ));
+                ->patch(fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params));
 
-            return GitHubIssueData::createFromGitHubResponse($response);
+            return GitHubIssueData::from($response);
         });
     }
 
@@ -98,11 +92,9 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData(['state' => 'open'])
-                ->patch(fn () => $this->executeWithRetry(
-                    fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open'])
-                ));
+                ->patch(fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open']));
 
-            return GitHubIssueData::createFromGitHubResponse($response);
+            return GitHubIssueData::from($response);
         });
     }
 
@@ -123,7 +115,7 @@ class GitHubIssues extends GitHubResource
             $issues = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues?page={$page}")
                 ->withData(['since' => $since->format('c'), 'page' => $page])
-                ->get(fn () => $this->executeWithRetry(fn (): array => $this->getIssueApi()
+                ->get(fn (): array => $this->getIssueApi()
                     ->configure('full')
                     ->all(
                         $this->owner(),
@@ -136,7 +128,7 @@ class GitHubIssues extends GitHubResource
                             'per_page' => $perPage,
                             'page' => $page,
                         ]
-                    )));
+                    ));
 
             if ($issues === []) {
                 break;
@@ -170,12 +162,10 @@ class GitHubIssues extends GitHubResource
         $timeline = $this->integration
             ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
             ->withData(['issue_number' => $issueNumber, 'page' => $page])
-            ->get(fn () => $this->executeWithRetry(
-                fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner(), $this->repo(), $issueNumber])
-            ));
+            ->get(fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner(), $this->repo(), $issueNumber]));
 
         foreach ($timeline as $event) {
-            $callback(GitHubEventData::createFromGitHubResponse($event));
+            $callback(GitHubEventData::from($event));
         }
 
         while ($pager->hasNext()) {
@@ -185,10 +175,10 @@ class GitHubIssues extends GitHubResource
             $timeline = $this->integration
                 ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                ->get(fn () => $this->executeWithRetry(fn (): array => $pager->fetchNext()));
+                ->get(fn (): array => $pager->fetchNext());
 
             foreach ($timeline as $event) {
-                $callback(GitHubEventData::createFromGitHubResponse($event));
+                $callback(GitHubEventData::from($event));
             }
         }
     }

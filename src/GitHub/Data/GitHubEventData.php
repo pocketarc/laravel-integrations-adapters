@@ -39,48 +39,41 @@ class GitHubEventData extends Data
     ) {}
 
     /**
-     * Create from GitHub API response.
-     * Handles cross-referenced events which need synthetic IDs.
-     *
-     * @param  array<string, mixed>  $data
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
      */
-    public static function createFromGitHubResponse(array $data): self
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
     {
-        $eventValue = $data['event'] ?? '';
+        $eventValue = $properties['event'] ?? '';
         if (! is_string($eventValue)) {
             throw new \InvalidArgumentException('Event type must be a string');
         }
         $event = GitHubEventType::from($eventValue);
 
-        $id = $data['id'] ?? null;
-        $url = is_string($data['url'] ?? null) ? $data['url'] : '';
-        $nodeId = is_string($data['node_id'] ?? null) ? $data['node_id'] : '';
-        $source = $data['source'] ?? null;
-        $sourceType = null;
-        $sourceNumber = null;
+        $id = $properties['id'] ?? null;
+        $url = is_string($properties['url'] ?? null) ? $properties['url'] : '';
+        $nodeId = is_string($properties['node_id'] ?? null) ? $properties['node_id'] : '';
+        $source = $properties['source'] ?? null;
 
-        $createdAt = $data['created_at'] ?? null;
+        $createdAt = $properties['created_at'] ?? null;
         if (! is_string($createdAt)) {
             throw new \InvalidArgumentException('created_at must be a string');
         }
 
         if ($id === null && $event === GitHubEventType::CrossReferenced && is_array($source)) {
             $resolved = self::resolveCrossReference($source, $createdAt, $url, $nodeId);
-            $id = $resolved['id'];
-            $url = $resolved['url'];
-            $nodeId = $resolved['node_id'];
-            $sourceType = $resolved['source_type'];
-            $sourceNumber = $resolved['source_number'];
+            $properties['id'] = $resolved['id'];
+            $properties['url'] = $resolved['url'];
+            $properties['node_id'] = $resolved['node_id'];
+            $properties['source_type'] = $resolved['source_type'];
+            $properties['source_number'] = $resolved['source_number'];
+        } else {
+            $idValue = $id ?? 'unknown';
+            $properties['id'] = is_int($idValue) ? (string) $idValue : $idValue;
         }
 
-        $idValue = $id ?? 'unknown';
-        $data['id'] = is_int($idValue) ? (string) $idValue : $idValue;
-        $data['url'] = $url;
-        $data['node_id'] = $nodeId;
-        $data['source_type'] = $sourceType;
-        $data['source_number'] = $sourceNumber;
-
-        return self::from($data);
+        return $properties;
     }
 
     /**

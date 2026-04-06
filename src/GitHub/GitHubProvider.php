@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\GitHub;
 
+use Github\Exception\ApiLimitExceedException;
+use Github\Exception\RuntimeException as GitHubRuntimeException;
+use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -11,6 +14,7 @@ use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSyncFailed;
 use Integrations\Adapters\GitHub\Events\GitHubSyncCompleted;
+use Integrations\Contracts\CustomizesRetry;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
@@ -19,8 +23,42 @@ use Integrations\Models\Integration;
 use Integrations\Sync\SyncResult;
 use InvalidArgumentException;
 
-class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
+class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
+    #[\Override]
+    public function isRetryable(\Throwable $e): ?bool
+    {
+        if ($e instanceof ApiLimitExceedException) {
+            return true;
+        }
+
+        if ($e instanceof ConnectException) {
+            return true;
+        }
+
+        if ($e instanceof GitHubRuntimeException) {
+            $code = $e->getCode();
+
+            return $code === 429
+                || ($code === 403 && str_contains($e->getMessage(), 'throttl'))
+                || ($code >= 500 && $code < 600);
+        }
+
+        return null;
+    }
+
+    #[\Override]
+    public function retryDelayMs(\Throwable $e, int $attempt, ?int $statusCode): ?int
+    {
+        if ($e instanceof ApiLimitExceedException) {
+            $delaySeconds = max($e->getResetTime() - time(), 1);
+
+            return min($delaySeconds, 120) * 1000;
+        }
+
+        return null;
+    }
+
     #[\Override]
     public function name(): string
     {
@@ -90,7 +128,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
 
         $client->issues()->since($since, function (array $issue) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
             try {
-                $issueData = GitHubIssueData::createFromGitHubResponse($issue);
+                $issueData = GitHubIssueData::from($issue);
                 GitHubIssueSynced::dispatch($integration, $issueData);
                 $successCount++;
             } catch (\Throwable $e) {
@@ -107,7 +145,7 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
             }
         });
 
-        $safeSyncedAt = $earliestFailureAt ?? now();
+        $safeSyncedAt = $this->resolveSyncCursor($earliestFailureAt, $failureCount, $since);
 
         $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         GitHubSyncCompleted::dispatch($integration, $result);
@@ -166,5 +204,15 @@ class GitHubProvider implements HasHealthCheck, HasIncrementalSync, IntegrationP
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since): Carbon
+    {
+        if ($earliestFailureAt !== null) {
+            return $earliestFailureAt;
+        }
+
+        // Don't advance cursor past unprocessed failures without timestamps.
+        return $failureCount > 0 ? $since : Carbon::now();
     }
 }

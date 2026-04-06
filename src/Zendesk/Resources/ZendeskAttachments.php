@@ -4,14 +4,21 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk\Resources;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Integrations\Adapters\Concerns\ValidatesUrls;
+use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
+use Integrations\Adapters\Zendesk\Data\ZendeskCommentPageResponse;
 use Integrations\Adapters\Zendesk\ZendeskResource;
-use stdClass;
 
 class ZendeskAttachments extends ZendeskResource
 {
+    use ValidatesUrls;
+
     public function download(string $url): ?string
     {
+        self::assertUrlNotPrivate($url);
+
         return $this->executeWithErrorHandling(function () use ($url): ?string {
             $result = $this->integration
                 ->to($url)
@@ -35,23 +42,21 @@ class ZendeskAttachments extends ZendeskResource
             $params = ['page[size]' => 100];
 
             do {
-                $commentsResponse = $this->integration
-                    ->to("tickets/{$ticketId}/comments.json")
+                $response = $this->integration
+                    ->toAs("tickets/{$ticketId}/comments.json", ZendeskCommentPageResponse::class)
                     ->withData($params)
-                    ->get(fn () => $this->executeWithRetry(
-                        fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params)
-                    ));
+                    ->get(fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params));
 
-                if (! $commentsResponse instanceof stdClass || ! property_exists($commentsResponse, 'comments') || ! is_array($commentsResponse->comments)) {
+                if (! $response instanceof ZendeskCommentPageResponse) {
                     return null;
                 }
 
-                $url = $this->findAttachmentContentUrl($commentsResponse->comments, $attachmentId);
+                $url = $this->findAttachmentContentUrl($response->comments, $attachmentId);
                 if ($url !== null) {
                     return $url;
                 }
 
-                $cursor = $this->getNextCursor($commentsResponse);
+                $cursor = $response->meta->has_more ? $response->meta->after_cursor : null;
                 if ($cursor !== null) {
                     $params['page[after]'] = $cursor;
                 }
@@ -62,35 +67,15 @@ class ZendeskAttachments extends ZendeskResource
     }
 
     /**
-     * @param  array<mixed, mixed>  $comments
+     * @param  Collection<int, ZendeskCommentData>  $comments
      */
-    private function findAttachmentContentUrl(array $comments, int $attachmentId): ?string
+    private function findAttachmentContentUrl(Collection $comments, int $attachmentId): ?string
     {
         foreach ($comments as $comment) {
-            if (! $comment instanceof stdClass) {
-                continue;
-            }
-            $url = $this->findContentUrlInAttachments($comment->attachments ?? [], $attachmentId);
-            if ($url !== null) {
-                return $url;
-            }
-        }
-
-        return null;
-    }
-
-    private function findContentUrlInAttachments(mixed $attachments, int $attachmentId): ?string
-    {
-        if (! is_array($attachments)) {
-            return null;
-        }
-
-        foreach ($attachments as $attachment) {
-            if (! $attachment instanceof stdClass) {
-                continue;
-            }
-            if (property_exists($attachment, 'id') && $attachment->id === $attachmentId) {
-                return property_exists($attachment, 'content_url') && is_string($attachment->content_url) ? $attachment->content_url : null;
+            foreach ($comment->attachments as $attachment) {
+                if ($attachment->id === $attachmentId) {
+                    return $attachment->content_url;
+                }
             }
         }
 
