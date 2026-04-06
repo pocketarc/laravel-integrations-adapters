@@ -120,7 +120,16 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
         }
 
         $client = new GitHubClient($integration);
-        $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
+
+        if ($cursor === null || $cursor === '') {
+            $since = Carbon::createFromTimestamp(0);
+        } else {
+            $parsed = self::parseTimestamp($cursor);
+            if ($parsed === null) {
+                throw new InvalidArgumentException("GitHubProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
+            }
+            $since = $parsed->subHour();
+        }
 
         $successCount = 0;
         $failureCount = 0;

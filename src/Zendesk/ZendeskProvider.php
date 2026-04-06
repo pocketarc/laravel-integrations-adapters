@@ -84,7 +84,16 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         }
 
         $client = new ZendeskClient($integration);
-        $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
+
+        if ($cursor === null || $cursor === '') {
+            $since = Carbon::createFromTimestamp(0);
+        } else {
+            $parsed = self::parseTimestamp($cursor);
+            if ($parsed === null) {
+                throw new InvalidArgumentException("ZendeskProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
+            }
+            $since = $parsed->subHour();
+        }
 
         $successCount = 0;
         $failureCount = 0;
@@ -166,6 +175,19 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             return $response->successful();
         } catch (\Throwable) {
             return false;
+        }
+    }
+
+    private static function parseTimestamp(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
         }
     }
 
