@@ -17,9 +17,9 @@ class ZendeskAttachments extends ZendeskResource
 
     public function download(string $url): ?string
     {
-        self::assertUrlNotPrivate($url);
-
         return $this->executeWithErrorHandling(function () use ($url): ?string {
+            self::assertUrlNotPrivate($url);
+
             $result = $this->integration
                 ->to($url)
                 ->get(function () use ($url): string {

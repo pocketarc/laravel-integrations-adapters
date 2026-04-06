@@ -133,7 +133,7 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
                 $successCount++;
             } catch (\Throwable $e) {
                 $failureCount++;
-                $updatedAt = array_key_exists('updated_at', $issue) && is_string($issue['updated_at']) ? Carbon::parse($issue['updated_at']) : null;
+                $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);
                 if ($updatedAt !== null) {
                     $earliestFailureAt = $earliestFailureAt?->min($updatedAt) ?? $updatedAt;
                 }
@@ -203,6 +203,19 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
             return $response->successful();
         } catch (\Throwable) {
             return false;
+        }
+    }
+
+    private static function parseTimestamp(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
         }
     }
 

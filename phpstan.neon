@@ -67,6 +67,9 @@ parameters:
         -
             function: 'compact()'
             message: 'use explicit array construction instead'
+        -
+            function: 'assert()'
+            message: 'use a proper exception or runtime check'
 
     # PHPStan strictness
     checkTooWideReturnTypesInProtectedAndPublicMethods: true

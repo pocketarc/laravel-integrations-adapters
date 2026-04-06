@@ -71,7 +71,7 @@ class ZendeskUserData extends Data
             $properties['email'] = (is_int($id) ? $id : 0).'@zendesk.local';
         }
 
-        if (array_key_exists('phone', $properties) && ! is_string($properties['phone'])) {
+        if (array_key_exists('phone', $properties) && $properties['phone'] !== null && ! is_string($properties['phone'])) {
             Log::warning('ZendeskUserData: Non-string phone value received', [
                 'user_id' => $properties['id'] ?? null,
                 'phone_type' => get_debug_type($properties['phone']),
