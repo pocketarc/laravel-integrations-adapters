@@ -213,6 +213,8 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
         }
 
         // Don't advance cursor past unprocessed failures without timestamps.
-        return $failureCount > 0 ? $since : Carbon::now();
+        // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
+        // failures don't widen the overlap window on each run.
+        return $failureCount > 0 ? $since->copy()->addHour() : Carbon::now();
     }
 }

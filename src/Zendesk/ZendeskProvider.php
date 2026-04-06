@@ -175,6 +175,8 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             return $earliestFailureAt;
         }
 
-        return $failureCount > 0 ? $since : now();
+        // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
+        // failures don't widen the overlap window on each run.
+        return $failureCount > 0 ? $since->copy()->addHour() : now();
     }
 }

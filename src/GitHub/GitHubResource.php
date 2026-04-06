@@ -8,6 +8,7 @@ use Github\Api\Issue as IssueApi;
 use Github\Client as GithubSdkClient;
 use Integrations\Adapters\Concerns\HandlesErrors;
 use Integrations\Models\Integration;
+use RuntimeException;
 
 abstract class GitHubResource
 {
@@ -42,7 +43,7 @@ abstract class GitHubResource
     {
         $api = $this->sdk()->api('issue');
         if (! $api instanceof IssueApi) {
-            throw new \RuntimeException('Expected IssueApi, got '.get_debug_type($api));
+            throw new RuntimeException('Expected IssueApi, got '.get_debug_type($api));
         }
 
         return $api;

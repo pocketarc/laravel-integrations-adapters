@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Zendesk\Resources;
 
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Zendesk\Data\ZendeskIncrementalTicketResponse;
 use Integrations\Adapters\Zendesk\Data\ZendeskSearchResponse;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
@@ -179,9 +178,7 @@ class ZendeskTickets extends ZendeskResource
 
                 $users = $response->users->keyBy('id');
 
-                if ($this->dispatchTicketsNewerThan($response->results, $users, $minId, $callback)) {
-                    break;
-                }
+                $this->dispatchTicketsNewerThan($response->results, $users, $minId, $callback);
 
                 $hasNextPage = $response->next_page !== null;
                 $page++;
@@ -201,43 +198,27 @@ class ZendeskTickets extends ZendeskResource
     private function dispatchTickets(Collection $tickets, Collection $users, callable $callback): void
     {
         foreach ($tickets as $ticket) {
-            try {
-                $user = $users[$ticket->requester_id] ?? null;
-                $callback($ticket, $user instanceof ZendeskUserData ? $user : null);
-            } catch (\Throwable $e) {
-                Log::error("ZendeskTickets: Failed processing ticket {$ticket->id}: {$e->getMessage()}");
-            }
+            $user = $users[$ticket->requester_id] ?? null;
+            $callback($ticket, $user instanceof ZendeskUserData ? $user : null);
         }
     }
 
     /**
-     * Dispatch tickets newer than $minId. Returns true if an older ticket was encountered.
-     *
      * @param  Collection<int, ZendeskTicketData>  $tickets
      * @param  Collection<int|string, ZendeskUserData>  $users
      * @param  callable(ZendeskTicketData, ZendeskUserData|null): void  $callback
      *
      * @param-immediately-invoked-callable $callback
      */
-    private function dispatchTicketsNewerThan(Collection $tickets, Collection $users, int $minId, callable $callback): bool
+    private function dispatchTicketsNewerThan(Collection $tickets, Collection $users, int $minId, callable $callback): void
     {
-        $reachedOlderTickets = false;
-
         foreach ($tickets as $ticket) {
-            try {
-                if ($ticket->id <= $minId) {
-                    $reachedOlderTickets = true;
-
-                    continue;
-                }
-
-                $user = $users[$ticket->requester_id] ?? null;
-                $callback($ticket, $user instanceof ZendeskUserData ? $user : null);
-            } catch (\Throwable $e) {
-                Log::error("ZendeskTickets: Failed processing ticket {$ticket->id}: {$e->getMessage()}");
+            if ($ticket->id <= $minId) {
+                continue;
             }
-        }
 
-        return $reachedOlderTickets;
+            $user = $users[$ticket->requester_id] ?? null;
+            $callback($ticket, $user instanceof ZendeskUserData ? $user : null);
+        }
     }
 }

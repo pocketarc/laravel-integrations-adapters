@@ -68,9 +68,10 @@ class GitHubEventData extends Data
             $properties['node_id'] = $resolved['node_id'];
             $properties['source_type'] = $resolved['source_type'];
             $properties['source_number'] = $resolved['source_number'];
-        } else {
-            $idValue = $id ?? 'unknown';
-            $properties['id'] = is_int($idValue) ? (string) $idValue : $idValue;
+        } elseif (is_int($id)) {
+            $properties['id'] = (string) $id;
+        } elseif (! is_string($id)) {
+            $properties['id'] = 'unknown';
         }
 
         return $properties;

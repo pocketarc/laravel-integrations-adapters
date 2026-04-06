@@ -22,10 +22,8 @@ class ZendeskAttachments extends ZendeskResource
         return $this->executeWithErrorHandling(function () use ($url): ?string {
             $result = $this->integration
                 ->to($url)
-                ->get(function () use ($url): ?string {
-                    $response = Http::timeout(120)->get($url);
-
-                    return $response->successful() ? $response->body() : null;
+                ->get(function () use ($url): string {
+                    return Http::timeout(120)->get($url)->throw()->body();
                 });
 
             return is_string($result) ? $result : null;
