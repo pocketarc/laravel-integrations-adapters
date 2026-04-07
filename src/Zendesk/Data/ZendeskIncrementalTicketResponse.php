@@ -21,8 +21,8 @@ class ZendeskIncrementalTicketResponse extends Data
         public readonly Collection $tickets,
         #[DataCollectionOf(ZendeskUserData::class)]
         public readonly Collection $users,
-        public readonly ?string $next_page,
-        public readonly int $count,
+        public readonly ?string $next_page = null,
+        public readonly int $count = 0,
     ) {}
 
     public function nextTimestamp(): ?int

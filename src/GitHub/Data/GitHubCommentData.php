@@ -48,7 +48,6 @@ class GitHubCommentData extends Data
         $properties['attachments'] = GitHubAttachmentData::extractFromContent($bodyHtml, $body)
             ->map(fn (GitHubAttachmentData $a) => $a->toArray())
             ->toArray();
-        $properties['body'] = $body;
 
         return $properties;
     }

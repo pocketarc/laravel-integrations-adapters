@@ -6,6 +6,7 @@ namespace Integrations\Adapters\Concerns;
 
 use RuntimeException;
 
+use function Safe\dns_get_record;
 use function Safe\parse_url;
 
 trait ValidatesUrls
@@ -21,8 +22,8 @@ trait ValidatesUrls
             throw new RuntimeException('Cannot parse host from URL.');
         }
 
-        $ips = gethostbynamel($host);
-        if ($ips === false || $ips === []) {
+        $ips = self::resolveHostIps($host);
+        if ($ips === []) {
             throw new RuntimeException("Cannot resolve hostname: {$host}");
         }
 
@@ -31,5 +32,32 @@ trait ValidatesUrls
                 throw new RuntimeException('URL host resolves to a blocked IP range.');
             }
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function resolveHostIps(string $host): array
+    {
+        $ips = self::extractIps(dns_get_record($host, DNS_A), 'ip');
+
+        return [...$ips, ...self::extractIps(dns_get_record($host, DNS_AAAA), 'ipv6')];
+    }
+
+    /**
+     * @param  list<mixed>  $records
+     * @return list<string>
+     */
+    private static function extractIps(array $records, string $key): array
+    {
+        $ips = [];
+
+        foreach ($records as $record) {
+            if (is_array($record) && array_key_exists($key, $record) && is_string($record[$key])) {
+                $ips[] = $record[$key];
+            }
+        }
+
+        return $ips;
     }
 }

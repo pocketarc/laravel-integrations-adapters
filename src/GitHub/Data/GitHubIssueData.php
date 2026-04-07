@@ -52,10 +52,10 @@ class GitHubIssueData extends Data
     {
         $properties['original'] ??= $properties;
 
-        $body = is_string($properties['body'] ?? null) ? $properties['body'] : '';
+        $body = is_string($properties['body'] ?? null) ? $properties['body'] : null;
         $bodyHtml = is_string($properties['body_html'] ?? null) ? $properties['body_html'] : '';
 
-        $properties['attachments'] = GitHubAttachmentData::extractFromContent($bodyHtml, $body)
+        $properties['attachments'] = GitHubAttachmentData::extractFromContent($bodyHtml, $body ?? '')
             ->map(fn (GitHubAttachmentData $a) => $a->toArray())
             ->toArray();
         $properties['body'] = $body;

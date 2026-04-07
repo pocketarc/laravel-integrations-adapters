@@ -40,7 +40,7 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
             $code = $e->getCode();
 
             return $code === 429
-                || ($code === 403 && str_contains($e->getMessage(), 'throttl'))
+                || ($code === 403 && self::isRateLimitMessage($e->getMessage()))
                 || ($code >= 500 && $code < 600);
         }
 
@@ -51,9 +51,7 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
     public function retryDelayMs(\Throwable $e, int $attempt, ?int $statusCode): ?int
     {
         if ($e instanceof ApiLimitExceedException) {
-            $delaySeconds = max($e->getResetTime() - time(), 1);
-
-            return min($delaySeconds, 120) * 1000;
+            return max($e->getResetTime() - time(), 1) * 1000;
         }
 
         return null;
@@ -222,10 +220,19 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
         }
 
         try {
-            return Carbon::parse($value);
+            return Carbon::createFromFormat('Y-m-d\TH:i:sP', $value);
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private static function isRateLimitMessage(string $message): bool
+    {
+        $lower = mb_strtolower($message);
+
+        return str_contains($lower, 'rate limit')
+            || str_contains($lower, 'throttl')
+            || str_contains($lower, 'abuse');
     }
 
     private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since): Carbon

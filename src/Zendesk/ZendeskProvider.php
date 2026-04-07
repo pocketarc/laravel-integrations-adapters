@@ -185,7 +185,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         }
 
         try {
-            return Carbon::parse($value);
+            return Carbon::createFromFormat('Y-m-d\TH:i:sP', $value);
         } catch (\Throwable) {
             return null;
         }
