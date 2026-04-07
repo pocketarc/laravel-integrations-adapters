@@ -87,7 +87,7 @@ class GitHubClientTest extends TestCase
         $mockHttp->addResponse($this->jsonResponse($this->fakeIssue(), 201));
 
         $client = $this->createClient($mockHttp);
-        $result = $client->createIssue('Test issue', 'Body text');
+        $result = $client->issues()->create('Test issue', 'Body text');
 
         $this->assertInstanceOf(GitHubIssueData::class, $result);
         $this->assertSame(42, $result->number);
@@ -105,7 +105,7 @@ class GitHubClientTest extends TestCase
         ]));
 
         $client = $this->createClient($mockHttp);
-        $result = $client->getIssue(42);
+        $result = $client->issues()->get(42);
 
         $this->assertIsArray($result);
         $this->assertSame(42, $result['number']);
@@ -147,7 +147,7 @@ class GitHubClientTest extends TestCase
 
         $client = $this->createClient($mockHttp);
         $issues = [];
-        $client->getIssuesSince(new \DateTimeImmutable('2026-01-01'), function (array $issue) use (&$issues): void {
+        $client->issues()->since(new \DateTimeImmutable('2026-01-01'), function (array $issue) use (&$issues): void {
             $issues[] = $issue;
         });
 
@@ -166,7 +166,7 @@ class GitHubClientTest extends TestCase
 
         $client = $this->createClient($mockHttp);
         $issues = [];
-        $client->getIssuesSince(new \DateTimeImmutable('2026-01-01'), function (array $issue) use (&$issues): void {
+        $client->issues()->since(new \DateTimeImmutable('2026-01-01'), function (array $issue) use (&$issues): void {
             $issues[] = $issue;
         });
 
@@ -182,7 +182,7 @@ class GitHubClientTest extends TestCase
 
         $client = $this->createClient($mockHttp);
         $comments = [];
-        $client->getIssueComments(42, function (array $comment) use (&$comments): void {
+        $client->comments()->list(42, function (array $comment) use (&$comments): void {
             $comments[] = $comment;
         });
 
@@ -197,7 +197,7 @@ class GitHubClientTest extends TestCase
         $mockHttp->addResponse($this->jsonResponse($this->fakeIssue('closed')));
 
         $client = $this->createClient($mockHttp);
-        $result = $client->closeIssue(42);
+        $result = $client->issues()->close(42);
 
         $this->assertInstanceOf(GitHubIssueData::class, $result);
         $this->assertSame('closed', $result->state);
@@ -222,7 +222,7 @@ class GitHubClientTest extends TestCase
         ]));
 
         $client = $this->createClient($mockHttp);
-        $result = $client->addComment(42, 'New comment');
+        $result = $client->comments()->add(42, 'New comment');
 
         $this->assertInstanceOf(GitHubCommentData::class, $result);
         $this->assertSame('New comment', $result->body);

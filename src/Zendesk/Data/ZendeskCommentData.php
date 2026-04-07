@@ -33,6 +33,18 @@ class ZendeskCommentData extends Data
         public readonly ?array $original = null,
     ) {}
 
+    /**
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
+     */
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
+    {
+        $properties['original'] ??= $properties;
+
+        return $properties;
+    }
+
     public function hasAttachments(): bool
     {
         return $this->attachments->isNotEmpty();

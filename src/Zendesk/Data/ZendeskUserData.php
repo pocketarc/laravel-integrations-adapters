@@ -57,42 +57,28 @@ class ZendeskUserData extends Data
     ) {}
 
     /**
-     * Create from Zendesk API response.
-     * Handles email fallback for users without email addresses.
-     *
-     * Note: Method is named "create*" not "from*" to avoid Laravel Data's
-     * custom creator detection which would cause infinite recursion.
-     *
-     * @param  array<string, mixed>|object  $response
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
      */
-    public static function createFromZendeskResponse(object|array $response): self
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
     {
-        if (is_object($response)) {
-            $encoded = json_encode($response);
-            $response = is_string($encoded) ? json_decode($encoded, true) : [];
-            if (! is_array($response)) {
-                $response = [];
-            }
+        $properties['original'] ??= $properties;
+
+        $email = $properties['email'] ?? null;
+        if (! is_string($email) || $email === '') {
+            $userId = $properties['id'] ?? 0;
+            $properties['email'] = (is_int($userId) ? $userId : 0).'@zendesk.local';
         }
 
-        $original = $response;
-
-        $email = $response['email'] ?? null;
-        if ($email === null || $email === '') {
-            $id = $response['id'] ?? 0;
-            $response['email'] = (is_int($id) ? $id : 0).'@zendesk.local';
-        }
-
-        if (isset($response['phone']) && ! is_string($response['phone'])) {
+        if (array_key_exists('phone', $properties) && $properties['phone'] !== null && ! is_string($properties['phone'])) {
             Log::warning('ZendeskUserData: Non-string phone value received', [
-                'user_id' => $response['id'] ?? null,
-                'phone_type' => get_debug_type($response['phone']),
+                'user_id' => $properties['id'] ?? null,
+                'phone_type' => get_debug_type($properties['phone']),
             ]);
-            $response['phone'] = null;
+            $properties['phone'] = null;
         }
 
-        $response['original'] = $original;
-
-        return self::from($response);
+        return $properties;
     }
 }

@@ -1,8 +1,90 @@
+# bleedingEdge.neon is intentional; CI may break when new PHPStan releases arrive.
 includes:
-    - vendor/larastan/larastan/extension.neon
-    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - phar://phpstan.phar/conf/bleedingEdge.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-dangerous-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-execution-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-insecure-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-loose-calls.neon
 
 parameters:
+    level: 10
+
     paths:
         - src
-    level: 10
+
+    ergebnis:
+        # Named arguments improve readability for methods with many parameters.
+        noNamedArgument:
+            enabled: false
+        # Laravel requires extending framework base classes (Data, etc.).
+        noExtends:
+            enabled: false
+        # Nullable parameters are standard PHP for optional args.
+        noParameterWithNullableTypeDeclaration:
+            enabled: false
+        noParameterWithNullDefaultValue:
+            enabled: false
+        # Nullable returns are idiomatic PHP/Laravel for "not found" / optional semantics.
+        noNullableReturnTypeDeclaration:
+            enabled: false
+        # Reasonable defaults in constructors (e.g. empty arrays, null) are idiomatic PHP.
+        noConstructorParameterWithDefaultValue:
+            enabled: false
+        # Library package; consumers should be free to extend any class.
+        final:
+            enabled: false
+        finalInAbstractClass:
+            enabled: false
+
+    # Larastan checks
+    checkModelProperties: true
+    checkOctaneCompatibility: true
+    noEnvCallsOutsideOfConfig: true
+    checkModelAppends: true
+
+    # Cognitive complexity thresholds
+    cognitive_complexity:
+        function: 10
+        class: 50
+
+    # Laravel/debug functions that should never appear in production code.
+    disallowedFunctionCalls:
+        -
+            function: 'dd()'
+            message: 'use a logger or proper exception handling'
+        -
+            function: 'dump()'
+            message: 'use a logger or proper exception handling'
+        -
+            function: 'ray()'
+            message: 'remove debug call'
+        -
+            function: 'die()'
+            message: 'use a proper exception or return statement'
+        -
+            function: 'exit()'
+            message: 'use a proper exception or return statement'
+        -
+            function: 'compact()'
+            message: 'use explicit array construction instead'
+        -
+            function: 'assert()'
+            message: 'use a proper exception or runtime check'
+
+    # PHPStan strictness
+    checkTooWideReturnTypesInProtectedAndPublicMethods: true
+    checkUninitializedProperties: true
+    checkImplicitMixed: true
+    checkBenevolentUnionTypes: true
+    reportPossiblyNonexistentGeneralArrayOffset: true
+    reportPossiblyNonexistentConstantArrayOffset: true
+    reportAlwaysTrueInLastCondition: true
+    reportAnyTypeWideningInVarTag: true
+    checkMissingOverrideMethodAttribute: true
+    checkMissingCallableSignature: true
+
+    ignoreErrors:
+        # #[\Override] on properties is a PHPStan bleeding edge feature that breaks PHP 8.3 at runtime.
+        -
+            identifier: property.missingOverride
+            reportUnmatched: false

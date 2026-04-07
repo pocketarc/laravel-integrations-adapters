@@ -15,4 +15,18 @@ class ZendeskViaData extends Data
         public readonly string $channel,
         public readonly array $source = [],
     ) {}
+
+    /**
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
+     */
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
+    {
+        if (array_key_exists('channel', $properties) && is_int($properties['channel'])) {
+            $properties['channel'] = (string) $properties['channel'];
+        }
+
+        return $properties;
+    }
 }

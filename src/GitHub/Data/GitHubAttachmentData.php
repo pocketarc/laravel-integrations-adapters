@@ -8,6 +8,8 @@ use DOMDocument;
 use Illuminate\Support\Collection;
 use Spatie\LaravelData\Data;
 
+use function Safe\preg_match;
+
 class GitHubAttachmentData extends Data
 {
     /**
@@ -45,64 +47,62 @@ class GitHubAttachmentData extends Data
         $images = $dom->getElementsByTagName('img');
 
         foreach ($images as $img) {
-            $canonicalSrc = $img->getAttribute('data-canonical-src');
-            $authenticatedUrl = $canonicalSrc !== '' ? $canonicalSrc : $img->getAttribute('src');
-            $alt = $img->getAttribute('alt');
-
-            if ($authenticatedUrl === '') {
-                continue;
+            $attachment = self::extractFromImage($img, $bodyHtml, $bodyPlain);
+            if ($attachment !== null) {
+                $attachments->push($attachment);
             }
-
-            $altText = $alt !== '' ? $alt : null;
-            $original = [
-                'body_html' => $bodyHtml,
-                'body_plain' => $bodyPlain,
-            ];
-
-            $hashMatch = [];
-            $matchResult = preg_match('/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i', $authenticatedUrl, $hashMatch);
-
-            $plainUrl = null;
-            $resolvedAuthenticatedUrl = null;
-
-            if ($matchResult === 1) {
-                $hash = $hashMatch[1];
-                $resolvedAuthenticatedUrl = $authenticatedUrl;
-
-                $plainMatch = [];
-                $plainMatchResult = preg_match('#https://[^\s"\']+'.preg_quote($hash, '#').'[^\s"\']*#i', $bodyPlain, $plainMatch);
-                if ($plainMatchResult === 1) {
-                    $plainUrl = rtrim($plainMatch[0], '>,)');
-                }
-            }
-
-            $attachments->push(
-                new self(
-                    plain_url: $plainUrl ?? $authenticatedUrl,
-                    authenticated_url: $resolvedAuthenticatedUrl,
-                    alt_text: $altText,
-                    original: $original,
-                )
-            );
         }
 
         if ($filterUrls !== null && $filterUrls->isNotEmpty()) {
             $attachments = $attachments
-                ->filter(
-                    function (self $attachment) use ($filterUrls): bool {
-                        foreach ($filterUrls as $filterUrl) {
-                            if (str_starts_with($attachment->plain_url, $filterUrl)) {
-                                return false;
-                            }
-                        }
-
-                        return true;
-                    }
-                )
+                ->reject(fn (self $a): bool => $filterUrls->contains(
+                    fn (string $prefix): bool => str_starts_with($a->plain_url, $prefix),
+                ))
                 ->values();
         }
 
         /** @var Collection<int, self> */
         return $attachments;
+    }
+
+    private static function extractFromImage(\DOMElement $img, string $bodyHtml, string $bodyPlain): ?self
+    {
+        $canonicalSrc = $img->getAttribute('data-canonical-src');
+        $authenticatedUrl = $canonicalSrc !== '' ? $canonicalSrc : $img->getAttribute('src');
+
+        if ($authenticatedUrl === '') {
+            return null;
+        }
+
+        $alt = $img->getAttribute('alt');
+        $altText = $alt !== '' ? $alt : null;
+        $original = [
+            'body_html' => $bodyHtml,
+            'body_plain' => $bodyPlain,
+        ];
+
+        $hashMatch = [];
+        $matchResult = preg_match('/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i', $authenticatedUrl, $hashMatch);
+
+        $plainUrl = null;
+        $resolvedAuthenticatedUrl = null;
+
+        if ($matchResult === 1) {
+            $hash = $hashMatch[1];
+            $resolvedAuthenticatedUrl = $authenticatedUrl;
+
+            $plainMatch = [];
+            $plainMatchResult = preg_match('#https://[^\s"\']+'.preg_quote($hash, '#').'[^\s"\']*#i', $bodyPlain, $plainMatch);
+            if ($plainMatchResult === 1) {
+                $plainUrl = rtrim($plainMatch[0], '>,)');
+            }
+        }
+
+        return new self(
+            plain_url: $plainUrl ?? $authenticatedUrl,
+            authenticated_url: $resolvedAuthenticatedUrl,
+            alt_text: $altText,
+            original: $original,
+        );
     }
 }

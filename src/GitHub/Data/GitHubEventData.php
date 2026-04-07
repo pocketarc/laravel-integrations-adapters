@@ -39,56 +39,64 @@ class GitHubEventData extends Data
     ) {}
 
     /**
-     * Create from GitHub API response.
-     * Handles cross-referenced events which need synthetic IDs.
-     *
-     * @param  array<string, mixed>  $data
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
      */
-    public static function createFromGitHubResponse(array $data): self
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
     {
-        $eventValue = $data['event'] ?? '';
+        $eventValue = $properties['event'] ?? '';
         if (! is_string($eventValue)) {
             throw new \InvalidArgumentException('Event type must be a string');
         }
         $event = GitHubEventType::from($eventValue);
 
-        $id = $data['id'] ?? null;
-        $url = is_string($data['url'] ?? null) ? $data['url'] : '';
-        $nodeId = is_string($data['node_id'] ?? null) ? $data['node_id'] : '';
-        $source = $data['source'] ?? null;
-        $sourceType = null;
-        $sourceNumber = null;
+        $id = $properties['id'] ?? null;
+        $url = is_string($properties['url'] ?? null) ? $properties['url'] : '';
+        $nodeId = is_string($properties['node_id'] ?? null) ? $properties['node_id'] : '';
+        $source = $properties['source'] ?? null;
 
-        $createdAt = $data['created_at'] ?? null;
+        $createdAt = $properties['created_at'] ?? null;
         if (! is_string($createdAt)) {
             throw new \InvalidArgumentException('created_at must be a string');
         }
 
         if ($id === null && $event === GitHubEventType::CrossReferenced && is_array($source)) {
-            $sourceIssue = $source['issue'] ?? null;
-            $sourceNumber = is_array($sourceIssue) ? ($sourceIssue['number'] ?? 0) : 0;
-            if (! is_int($sourceNumber)) {
-                $sourceNumber = 0;
-            }
-            $timestamp = Carbon::parse($createdAt)->timestamp;
-            $id = "xref-{$sourceNumber}-{$timestamp}";
-
-            $sourceType = is_string($source['type'] ?? null) ? $source['type'] : null;
-
-            if (is_array($sourceIssue)) {
-                $url = is_string($sourceIssue['url'] ?? null) ? $sourceIssue['url'] : '';
-                $nodeId = is_string($sourceIssue['node_id'] ?? null) ? $sourceIssue['node_id'] : '';
-            }
+            $resolved = self::resolveCrossReference($source, $createdAt, $url, $nodeId);
+            $properties['id'] = $resolved['id'];
+            $properties['url'] = $resolved['url'];
+            $properties['node_id'] = $resolved['node_id'];
+            $properties['source_type'] = $resolved['source_type'];
+            $properties['source_number'] = $resolved['source_number'];
+        } elseif (is_int($id)) {
+            $properties['id'] = (string) $id;
+        } elseif (! is_string($id)) {
+            $properties['id'] = 'unknown';
         }
 
-        $idValue = $id ?? 'unknown';
-        $data['id'] = is_int($idValue) ? (string) $idValue : $idValue;
-        $data['url'] = $url;
-        $data['node_id'] = $nodeId;
-        $data['source_type'] = $sourceType;
-        $data['source_number'] = $sourceNumber;
+        return $properties;
+    }
 
-        return self::from($data);
+    /**
+     * @param  array<mixed, mixed>  $source
+     * @return array{id: string, url: string, node_id: string, source_type: string|null, source_number: int}
+     */
+    private static function resolveCrossReference(array $source, string $createdAt, string $fallbackUrl, string $fallbackNodeId): array
+    {
+        $sourceIssue = is_array($source['issue'] ?? null) ? $source['issue'] : [];
+        $sourceNumber = is_int($sourceIssue['number'] ?? null) ? $sourceIssue['number'] : 0;
+        $timestamp = Carbon::parse($createdAt)->timestamp;
+
+        $url = is_string($sourceIssue['url'] ?? null) ? $sourceIssue['url'] : $fallbackUrl;
+        $nodeId = is_string($sourceIssue['node_id'] ?? null) ? $sourceIssue['node_id'] : $fallbackNodeId;
+
+        return [
+            'id' => "xref-{$sourceNumber}-{$timestamp}",
+            'url' => $url,
+            'node_id' => $nodeId,
+            'source_type' => is_string($source['type'] ?? null) ? $source['type'] : null,
+            'source_number' => $sourceNumber,
+        ];
     }
 
     public function formatDescription(): string

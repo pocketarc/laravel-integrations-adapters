@@ -22,6 +22,7 @@ use InvalidArgumentException;
 
 class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
+    #[\Override]
     public function name(): string
     {
         return 'Zendesk';
@@ -30,6 +31,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return array<string, mixed>
      */
+    #[\Override]
     public function credentialRules(): array
     {
         return [
@@ -41,6 +43,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return array<string, mixed>
      */
+    #[\Override]
     public function metadataRules(): array
     {
         return [
@@ -52,6 +55,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return class-string<ZendeskCredentials>
      */
+    #[\Override]
     public function credentialDataClass(): string
     {
         return ZendeskCredentials::class;
@@ -60,16 +64,19 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return class-string<ZendeskMetadata>
      */
+    #[\Override]
     public function metadataDataClass(): string
     {
         return ZendeskMetadata::class;
     }
 
+    #[\Override]
     public function sync(Integration $integration): SyncResult
     {
         return $this->syncIncremental($integration, null);
     }
 
+    #[\Override]
     public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
     {
         if ($cursor !== null && ! is_string($cursor)) {
@@ -77,13 +84,22 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         }
 
         $client = new ZendeskClient($integration);
-        $since = is_string($cursor) ? Carbon::parse($cursor)->subHour() : Carbon::createFromTimestamp(0);
+
+        if ($cursor === null || $cursor === '') {
+            $since = Carbon::createFromTimestamp(0);
+        } else {
+            $parsed = self::parseTimestamp($cursor);
+            if ($parsed === null) {
+                throw new InvalidArgumentException("ZendeskProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
+            }
+            $since = $parsed->subHour();
+        }
 
         $successCount = 0;
         $failureCount = 0;
         $earliestFailureAt = null;
 
-        $client->getTicketsSince($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
             try {
                 ZendeskTicketSynced::dispatch($integration, $ticket, $user);
                 $successCount++;
@@ -100,7 +116,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             }
         });
 
-        $safeSyncedAt = $earliestFailureAt ?? now();
+        $safeSyncedAt = $this->resolveSyncCursor($earliestFailureAt, $failureCount, $since);
 
         $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         ZendeskSyncCompleted::dispatch($integration, $result);
@@ -111,6 +127,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return list<string>
      */
+    #[\Override]
     public function sensitiveRequestFields(): array
     {
         return [];
@@ -119,21 +136,25 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     /**
      * @return list<string>
      */
+    #[\Override]
     public function sensitiveResponseFields(): array
     {
         return [];
     }
 
+    #[\Override]
     public function defaultSyncInterval(): int
     {
         return 5;
     }
 
-    public function defaultRateLimit(): ?int
+    #[\Override]
+    public function defaultRateLimit(): int
     {
         return 100;
     }
 
+    #[\Override]
     public function healthCheck(Integration $integration): bool
     {
         $credentials = $integration->credentials;
@@ -155,5 +176,29 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private static function parseTimestamp(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::createFromFormat('Y-m-d\TH:i:sP', $value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since): Carbon
+    {
+        if ($earliestFailureAt !== null) {
+            return $earliestFailureAt;
+        }
+
+        // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
+        // failures don't widen the overlap window on each run.
+        return $failureCount > 0 ? $since->copy()->addHour() : now();
     }
 }

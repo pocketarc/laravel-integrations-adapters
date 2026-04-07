@@ -65,6 +65,18 @@ class ZendeskTicketData extends Data
         public readonly ?array $original = null,
     ) {}
 
+    /**
+     * @param  array<mixed>  $properties
+     * @return array<mixed>
+     */
+    #[\Override]
+    public static function prepareForPipeline(array $properties): array
+    {
+        $properties['original'] ??= $properties;
+
+        return $properties;
+    }
+
     public function getCustomField(int $fieldId): mixed
     {
         return $this->custom_fields
