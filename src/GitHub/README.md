@@ -25,31 +25,31 @@ $integration = Integration::create([
 | `token` (string) - GitHub personal access token | `owner` (string) - repository owner |
 |                                                 | `repo` (string) - repository name   |
 
-## Client methods
+## Resources
 
 ```php
 $client = new GitHubClient($integration);
 ```
 
-| Method                                 | Description                                                                |
-|----------------------------------------|----------------------------------------------------------------------------|
-| `createIssue($title, $body, $labels)`  | Create an issue. Returns `GitHubIssueData`.                                |
-| `getIssue($number)`                    | Get a single issue by number.                                              |
-| `getIssuesSince($since, $callback)`    | Iterate issues updated since a timestamp. Skips PRs.                       |
-| `getIssueComments($number, $callback)` | Iterate all comments on an issue.                                          |
-| `getIssueTimeline($number, $callback)` | Iterate timeline events (labels, assignments, etc.).                       |
-| `closeIssue($number, $stateReason)`    | Close an issue. Optional state reason (completed, not_planned, duplicate). |
-| `reopenIssue($number)`                 | Reopen a closed issue.                                                     |
-| `addComment($number, $body)`           | Add a comment to an issue.                                                 |
-| `downloadGitHubAsset($url)`            | Download an asset with token auth for GitHub-hosted URLs.                  |
+| Resource              | Method                             | Description                                                                |
+|-----------------------|------------------------------------|----------------------------------------------------------------------------|
+| `$client->issues()`   | `->create($title, $body, $labels)` | Create an issue. Returns `GitHubIssueData`.                                |
+|                       | `->get($number)`                   | Get a single issue by number.                                              |
+|                       | `->since($since, $callback)`       | Iterate issues updated since a timestamp. Skips PRs.                       |
+|                       | `->close($number, $stateReason)`   | Close an issue. Optional state reason (completed, not_planned, duplicate). |
+|                       | `->reopen($number)`                | Reopen a closed issue.                                                     |
+|                       | `->timeline($number, $callback)`   | Iterate timeline events (labels, assignments, etc.).                       |
+| `$client->comments()` | `->list($number, $callback)`       | Iterate all comments on an issue.                                          |
+|                       | `->add($number, $body)`            | Add a comment to an issue. Returns `?GitHubCommentData`.                   |
+| `$client->assets()`   | `->download($url)`                 | Download an asset with token auth for GitHub-hosted URLs.                  |
 
 All methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. The provider implements `CustomizesRetry` so the core handles retry for GitHub SDK exceptions (rate limits, server errors, connection failures) with method-aware defaults (GET = 3 attempts, non-GET = 1).
 
 ## Sync
 
-The adapter syncs issues via `getIssuesSince()`. Each issue dispatches a `GitHubIssueSynced` event. Failed items dispatch `GitHubIssueSyncFailed` and don't advance the sync cursor past them. After the sync completes, `GitHubSyncCompleted` fires with the `SyncResult`.
+The adapter syncs issues via `$client->issues()->since()`. Each issue dispatches a `GitHubIssueSynced` event. Failed items dispatch `GitHubIssueSyncFailed` and don't advance the sync cursor past them. After the sync completes, `GitHubSyncCompleted` fires with the `SyncResult`.
 
-First sync (null cursor) fetches all issues from the beginning of time. Set `sync_cursor` on the integration to control the starting point:
+First sync (null cursor) fetches all issues from timestamp 0. Set `sync_cursor` on the integration to control the starting point:
 
 ```php
 $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');

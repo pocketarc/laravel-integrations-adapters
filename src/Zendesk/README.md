@@ -27,7 +27,7 @@ $integration = Integration::create([
 
 The health check appends `/api/v2/users/me.json` to `custom_domain` if set, otherwise uses `https://{subdomain}.zendesk.com`.
 
-## Client methods
+## Resources
 
 ```php
 $client = new ZendeskClient($integration);
@@ -53,9 +53,9 @@ All resource methods go through `Integration::request()` / `requestAs()` interna
 
 ## Sync
 
-The adapter syncs tickets via the Zendesk Incremental Tickets API (`getTicketsSince()`). Each ticket dispatches a `ZendeskTicketSynced` event with both the ticket data and the requester's user data (sideloaded). Failed items dispatch `ZendeskTicketSyncFailed` and don't advance the sync cursor past them. After the sync completes, `ZendeskSyncCompleted` fires with the `SyncResult`.
+The adapter syncs tickets via the Zendesk Incremental Tickets API (`$client->tickets()->since()`). Each ticket dispatches a `ZendeskTicketSynced` event with both the ticket data and the requester's user data (sideloaded). Failed items dispatch `ZendeskTicketSyncFailed` and don't advance the sync cursor past them. After the sync completes, `ZendeskSyncCompleted` fires with the `SyncResult`.
 
-First sync (null cursor) fetches all tickets from the beginning of time. Set `sync_cursor` on the integration to control the starting point:
+First sync (null cursor) fetches all tickets from timestamp 0. Set `sync_cursor` on the integration to control the starting point:
 
 ```php
 $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
