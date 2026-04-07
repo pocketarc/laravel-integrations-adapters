@@ -15,6 +15,7 @@ use Integrations\Adapters\Zendesk\ZendeskClient;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
+use Spatie\LaravelData\Exceptions\CannotCreateData;
 use Zendesk\API\HttpClient as ZendeskAPI;
 
 class ZendeskClientTest extends TestCase
@@ -206,5 +207,23 @@ class ZendeskClientTest extends TestCase
         });
 
         $this->assertCount(2, $comments);
+    }
+
+    public function test_deferred_validation_throws_on_first_use(): void
+    {
+        config(['app.debug' => true]);
+
+        $integration = $this->createIntegration(
+            providerKey: 'zendesk',
+            providerClass: ZendeskProvider::class,
+            credentials: ['invalid' => 'data'],
+            metadata: ['subdomain' => 'acme'],
+        );
+
+        $client = new ZendeskClient($integration);
+
+        $this->expectException(CannotCreateData::class);
+
+        $client->tickets()->get(1);
     }
 }

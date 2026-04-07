@@ -67,8 +67,8 @@ class ZendeskUserData extends Data
 
         $email = $properties['email'] ?? null;
         if (! is_string($email) || $email === '') {
-            $id = $properties['id'] ?? 0;
-            $properties['email'] = (is_int($id) ? $id : 0).'@zendesk.local';
+            $userId = $properties['id'] ?? 0;
+            $properties['email'] = (is_int($userId) ? $userId : 0).'@zendesk.local';
         }
 
         if (array_key_exists('phone', $properties) && $properties['phone'] !== null && ! is_string($properties['phone'])) {

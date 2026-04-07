@@ -16,9 +16,8 @@ class GitHubAssets extends GitHubResource
 
     public function download(string $url): ?string
     {
-        self::assertUrlNotPrivate($url);
-
         return $this->executeWithErrorHandling(function () use ($url): ?string {
+            self::assertUrlNotPrivate($url);
             $headers = self::isGitHubDomain($url) ? [
                 'Accept' => 'application/octet-stream',
                 'Authorization' => 'Bearer '.$this->token(),

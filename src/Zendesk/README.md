@@ -33,23 +33,23 @@ The health check appends `/api/v2/users/me.json` to `custom_domain` if set, othe
 $client = new ZendeskClient($integration);
 ```
 
-| Method                                            | Description                                                                                                    |
-|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| `getTickets($callback)`                           | Iterate all tickets via the SDK iterator.                                                                      |
-| `getTicketsSince($since, $callback)`              | Incremental ticket export with sideloaded users. Callback receives `ZendeskTicketData` and `?ZendeskUserData`. |
-| `getTicketsNewerThan($minId, $callback)`          | Fetch tickets with ID > `$minId` via Search API. For catching missed items.                                    |
-| `getUsers($callback?)`                            | Iterate all users. Optional callback receives each `ZendeskUserData`. Returns `Collection<ZendeskUserData>`.   |
-| `getTicketComments($ticketId, $callback)`         | Iterate comments on a ticket (cursor-paginated).                                                               |
-| `getTicket($ticketId)`                            | Get a single ticket.                                                                                           |
-| `getUser($userId)`                                | Get a single user.                                                                                             |
-| `closeTicket($ticketId)`                          | Set ticket status to "solved".                                                                                 |
-| `reopenTicket($ticketId)`                         | Set ticket status to "open".                                                                                   |
-| `addComment($ticketId, $body)`                    | Add a public comment to a ticket.                                                                              |
-| `addInternalNote($ticketId, $body)`               | Add an internal note (not visible to requester).                                                               |
-| `downloadAttachment($url)`                        | Download an attachment by content URL.                                                                         |
-| `getFreshAttachmentUrl($ticketId, $attachmentId)` | Get a fresh (non-expired) content URL for an attachment.                                                       |
+| Resource                 | Method                                 | Description                                                                                                    |
+|--------------------------|----------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| `$client->tickets()`     | `->get($ticketId)`                     | Get a single ticket. Returns `?ZendeskTicketData`.                                                             |
+|                          | `->list($callback)`                    | Iterate all tickets via the SDK iterator.                                                                      |
+|                          | `->since($since, $callback)`           | Incremental ticket export with sideloaded users. Callback receives `ZendeskTicketData` and `?ZendeskUserData`. |
+|                          | `->newerThan($minId, $callback)`       | Fetch tickets with ID > `$minId` via Search API. For catching missed items.                                    |
+|                          | `->close($ticketId)`                   | Set ticket status to "solved". Returns `?ZendeskTicketData`.                                                   |
+|                          | `->reopen($ticketId)`                  | Set ticket status to "open". Returns `?ZendeskTicketData`.                                                     |
+| `$client->comments()`    | `->list($ticketId, $callback)`         | Iterate comments on a ticket (cursor-paginated). Callback receives `ZendeskCommentData`.                       |
+|                          | `->add($ticketId, $body)`              | Add a public comment. Returns `?ZendeskCommentData`.                                                           |
+|                          | `->addInternalNote($ticketId, $body)`  | Add an internal note (not visible to requester). Returns `?ZendeskCommentData`.                                |
+| `$client->users()`       | `->get($userId)`                       | Get a single user. Returns `?ZendeskUserData`.                                                                 |
+|                          | `->list($callback?)`                   | Iterate all users. Returns `Collection<ZendeskUserData>`.                                                      |
+| `$client->attachments()` | `->download($url)`                     | Download an attachment by content URL.                                                                         |
+|                          | `->freshUrl($ticketId, $attachmentId)` | Get a fresh (non-expired) content URL for an attachment.                                                       |
 
-All methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
+All resource methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
 
 ## Sync
 

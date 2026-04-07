@@ -48,7 +48,7 @@ class ZendeskUsers extends ZendeskResource
                     $iterator = $this->sdk()->users()->iterator();
 
                     foreach ($iterator as $user) {
-                        if (! is_object($user)) {
+                        if (! $user instanceof stdClass) {
                             continue;
                         }
                         $data = ZendeskUserData::from($user);

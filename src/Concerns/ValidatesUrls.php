@@ -22,7 +22,10 @@ trait ValidatesUrls
             throw new RuntimeException('Cannot parse host from URL.');
         }
 
-        $ips = self::resolveHostIps($host);
+        $bare = trim($host, '[]');
+        $literal = filter_var($bare, FILTER_VALIDATE_IP);
+        $ips = $literal !== false ? [$literal] : self::resolveHostIps($host);
+
         if ($ips === []) {
             throw new RuntimeException("Cannot resolve hostname: {$host}");
         }
