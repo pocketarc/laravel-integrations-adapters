@@ -9,6 +9,7 @@ use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentPageResponse;
 use Integrations\Adapters\Zendesk\Data\ZendeskSearchResponse;
 use Integrations\Adapters\Zendesk\ZendeskResource;
+use InvalidArgumentException;
 use stdClass;
 use Zendesk\API\Http;
 
@@ -59,6 +60,10 @@ class ZendeskComments extends ZendeskResource
      */
     public function newerThan(int $minCommentId, callable $callback, int $lookbackDays = 7): void
     {
+        if ($lookbackDays < 1) {
+            throw new InvalidArgumentException("lookbackDays must be at least 1, got {$lookbackDays}.");
+        }
+
         $ticketIds = $this->searchRecentlyUpdatedTicketIds($lookbackDays);
 
         foreach ($ticketIds as $ticketId) {
