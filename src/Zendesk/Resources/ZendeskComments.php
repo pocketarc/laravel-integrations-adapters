@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk\Resources;
 
+use Illuminate\Support\Collection;
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentPageResponse;
+use Integrations\Adapters\Zendesk\Data\ZendeskSearchResponse;
 use Integrations\Adapters\Zendesk\ZendeskResource;
+use InvalidArgumentException;
 use stdClass;
+use Zendesk\API\Http;
 
 use function Safe\json_decode;
 use function Safe\json_encode;
@@ -45,6 +49,80 @@ class ZendeskComments extends ZendeskResource
                 $params['page[after]'] = $cursor;
             }
         } while ($cursor !== null);
+    }
+
+    /**
+     * Find comments with ID greater than $minCommentId across recently-updated tickets.
+     *
+     * @param  callable(ZendeskCommentData, int): void  $callback
+     *
+     * @param-immediately-invoked-callable $callback
+     */
+    public function newerThan(int $minCommentId, callable $callback, int $lookbackDays = 7): void
+    {
+        if ($lookbackDays < 1) {
+            throw new InvalidArgumentException("lookbackDays must be at least 1, got {$lookbackDays}.");
+        }
+
+        $ticketIds = $this->searchRecentlyUpdatedTicketIds($lookbackDays);
+
+        foreach ($ticketIds as $ticketId) {
+            $this->list($ticketId, function (ZendeskCommentData $comment) use ($minCommentId, $callback, $ticketId): void {
+                if ($comment->id > $minCommentId) {
+                    $callback($comment, $ticketId);
+                }
+            });
+        }
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function searchRecentlyUpdatedTicketIds(int $lookbackDays): Collection
+    {
+        $cutoff = now()->subDays($lookbackDays)->format('Y-m-d');
+        $page = 1;
+        $originalBasePath = $this->sdk()->getApiBasePath();
+
+        /** @var Collection<int, int> $ticketIds */
+        $ticketIds = new Collection;
+
+        try {
+            do {
+                $this->sdk()->setApiBasePath('api/v2/');
+
+                $response = $this->integration
+                    ->toAs("search.json?page={$page}", ZendeskSearchResponse::class)
+                    ->withData(['query' => "type:ticket updated>{$cutoff}", 'page' => $page])
+                    ->get(fn () => Http::send(
+                        $this->sdk(),
+                        'search.json',
+                        [
+                            'queryParams' => [
+                                'query' => "type:ticket updated>{$cutoff}",
+                                'sort_by' => 'updated_at',
+                                'sort_order' => 'desc',
+                                'page' => $page,
+                            ],
+                        ]
+                    ));
+
+                if (! $response instanceof ZendeskSearchResponse || $response->results->isEmpty()) {
+                    break;
+                }
+
+                foreach ($response->results as $ticket) {
+                    $ticketIds->push($ticket->id);
+                }
+
+                $hasNextPage = $response->next_page !== null;
+                $page++;
+            } while ($hasNextPage);
+        } finally {
+            $this->sdk()->setApiBasePath($originalBasePath);
+        }
+
+        return $ticketIds->unique()->values();
     }
 
     public function add(int $ticketId, string $comment): ?ZendeskCommentData
