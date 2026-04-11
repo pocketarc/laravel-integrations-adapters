@@ -15,7 +15,7 @@
         "php": "^8.3",
         "knplabs/github-api": "^3.16",
         "php-http/guzzle7-adapter": "^1.0",
-        "pocketarc/laravel-integrations": "^1.6",
+        "pocketarc/laravel-integrations": "^1.8",
         "spatie/laravel-data": "^4.0",
         "thecodingmachine/safe": "^3.3",
         "zendesk/zendesk_api_client_php": "^4.1"
@@ -47,11 +47,19 @@
             "Integrations\\Adapters\\Tests\\": "tests/"
         }
     },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Integrations\\Adapters\\IntegrationAdaptersServiceProvider"
+            ]
+        }
+    },
     "minimum-stability": "stable",
     "prefer-stable": true,
     "config": {
         "sort-packages": true,
         "allow-plugins": {
+            "php-http/discovery": false,
             "phpstan/extension-installer": true
         }
     }
