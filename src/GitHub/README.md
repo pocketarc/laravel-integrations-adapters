@@ -2,6 +2,12 @@
 
 Wraps the [knplabs/github-api](https://github.com/KnpLabs/php-github-api) SDK. Currently focused on issues (not PRs, releases, etc.).
 
+## Installation
+
+```bash
+composer require pocketarc/laravel-integrations-adapters
+```
+
 ## Setup
 
 ```php
