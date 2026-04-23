@@ -17,14 +17,11 @@ use Stripe\StripeClient as StripeSdkClient;
 
 /**
  * Thin Stripe SDK wrapper. Exposes one accessor per resource we cover; the
- * resource classes go through Integration::request() / requestAs() so every
- * call is logged, rate-limited, and retried by the core package rather than
- * by bespoke Stripe code.
- *
- * The consuming app should depend on this class and its resources, never on
- * \Stripe\* types directly. That keeps a future swap to a Gingerbread-native
- * billing backend a matter of providing a drop-in replacement with the same
- * surface, not a codebase-wide refactor.
+ * resource classes go through Integration::request() so every call is logged,
+ * rate-limited, and retried by the core package rather than by bespoke Stripe
+ * code. Return types are Stripe's own typed objects (`\Stripe\Refund`,
+ * `\Stripe\PaymentIntent`, etc.); the SDK already models them, so re-wrapping
+ * them in local Data classes would duplicate work without adding value.
  */
 class StripeClient
 {

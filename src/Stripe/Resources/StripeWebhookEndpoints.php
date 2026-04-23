@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
-use Integrations\Adapters\Stripe\Data\StripeWebhookEndpointData;
 use Integrations\Adapters\Stripe\StripeResource;
+use Stripe\Collection;
+use Stripe\WebhookEndpoint;
 
 class StripeWebhookEndpoints extends StripeResource
 {
@@ -18,7 +19,7 @@ class StripeWebhookEndpoints extends StripeResource
         array $enabledEvents,
         ?string $description = null,
         ?array $metadata = null,
-    ): StripeWebhookEndpointData {
+    ): WebhookEndpoint {
         $params = [
             'url' => $url,
             'enabled_events' => $enabledEvents,
@@ -30,23 +31,23 @@ class StripeWebhookEndpoints extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('webhook_endpoints')
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->webhookEndpoints->create($params)->toArray());
+            ->post(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->create($params));
 
-        return StripeWebhookEndpointData::from($response);
+        return $this->expectInstance($response, WebhookEndpoint::class);
     }
 
-    public function retrieve(string $id): StripeWebhookEndpointData
+    public function retrieve(string $id): WebhookEndpoint
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("webhook_endpoints/{$id}")
-            ->get(fn (): array => $this->sdk()->webhookEndpoints->retrieve($id)->toArray());
+            ->get(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->retrieve($id));
 
-        return StripeWebhookEndpointData::from($response);
+        return $this->expectInstance($response, WebhookEndpoint::class);
     }
 
     /**
@@ -60,7 +61,9 @@ class StripeWebhookEndpoints extends StripeResource
         ?string $description = null,
         ?bool $disabled = null,
         ?array $metadata = null,
-    ): StripeWebhookEndpointData {
+    ): WebhookEndpoint {
+        $this->assertId($id);
+
         $params = [];
         if ($url !== null) {
             $params['url'] = $url;
@@ -78,56 +81,41 @@ class StripeWebhookEndpoints extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("webhook_endpoints/{$id}")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->webhookEndpoints->update($id, $params)->toArray());
+            ->post(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->update($id, $params));
 
-        return StripeWebhookEndpointData::from($response);
+        return $this->expectInstance($response, WebhookEndpoint::class);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function delete(string $id): array
+    public function delete(string $id): WebhookEndpoint
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("webhook_endpoints/{$id}")
-            ->delete(fn (): array => $this->sdk()->webhookEndpoints->delete($id)->toArray());
+            ->delete(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->delete($id));
 
-        return $response;
+        return $this->expectInstance($response, WebhookEndpoint::class);
     }
 
     /**
-     * @return list<StripeWebhookEndpointData>
+     * @return Collection<WebhookEndpoint>
      */
-    public function list(?int $limit = null): array
+    public function list(?int $limit = null): Collection
     {
         $params = [];
         if ($limit !== null) {
+            $this->assertPositive($limit, 'limit');
             $params['limit'] = $limit;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('webhook_endpoints')
             ->withData($params)
-            ->get(fn (): array => $this->sdk()->webhookEndpoints->all($params)->toArray());
+            ->get(fn (): Collection => $this->sdk()->webhookEndpoints->all($params));
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            return [];
-        }
-
-        $items = [];
-        foreach ($data as $entry) {
-            if (is_array($entry)) {
-                $items[] = StripeWebhookEndpointData::from($entry);
-            }
-        }
-
-        return $items;
+        return $this->expectInstance($response, Collection::class);
     }
 }

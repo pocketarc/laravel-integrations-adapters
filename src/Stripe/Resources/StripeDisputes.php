@@ -4,24 +4,26 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
-use Integrations\Adapters\Stripe\Data\StripeDisputeData;
 use Integrations\Adapters\Stripe\StripeResource;
+use Stripe\Collection;
+use Stripe\Dispute;
 
 class StripeDisputes extends StripeResource
 {
-    public function retrieve(string $id): StripeDisputeData
+    public function retrieve(string $id): Dispute
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("disputes/{$id}")
-            ->get(fn (): array => $this->sdk()->disputes->retrieve($id)->toArray());
+            ->get(fn (): Dispute => $this->sdk()->disputes->retrieve($id));
 
-        return StripeDisputeData::from($response);
+        return $this->expectInstance($response, Dispute::class);
     }
 
     /**
      * Update metadata or submit a drafted dispute. Evidence submission has
-     * its own typed entry point in a follow-up — Stripe's evidence shape is
+     * its own typed entry point in a follow-up; Stripe's evidence shape is
      * large and nested and deserves a dedicated Data class rather than a
      * loosely-typed array passthrough here.
      *
@@ -31,7 +33,9 @@ class StripeDisputes extends StripeResource
         string $id,
         ?bool $submit = null,
         ?array $metadata = null,
-    ): StripeDisputeData {
+    ): Dispute {
+        $this->assertId($id);
+
         $params = [];
         if ($submit !== null) {
             $params['submit'] = $submit;
@@ -40,29 +44,29 @@ class StripeDisputes extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("disputes/{$id}")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->disputes->update($id, $params)->toArray());
+            ->post(fn (): Dispute => $this->sdk()->disputes->update($id, $params));
 
-        return StripeDisputeData::from($response);
+        return $this->expectInstance($response, Dispute::class);
     }
 
-    public function close(string $id): StripeDisputeData
+    public function close(string $id): Dispute
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("disputes/{$id}/close")
-            ->post(fn (): array => $this->sdk()->disputes->close($id)->toArray());
+            ->post(fn (): Dispute => $this->sdk()->disputes->close($id));
 
-        return StripeDisputeData::from($response);
+        return $this->expectInstance($response, Dispute::class);
     }
 
     /**
-     * @return list<StripeDisputeData>
+     * @return Collection<Dispute>
      */
-    public function list(?string $charge = null, ?string $paymentIntent = null, ?int $limit = null): array
+    public function list(?string $charge = null, ?string $paymentIntent = null, ?int $limit = null): Collection
     {
         $params = [];
         if ($charge !== null) {
@@ -72,27 +76,15 @@ class StripeDisputes extends StripeResource
             $params['payment_intent'] = $paymentIntent;
         }
         if ($limit !== null) {
+            $this->assertPositive($limit, 'limit');
             $params['limit'] = $limit;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('disputes')
             ->withData($params)
-            ->get(fn (): array => $this->sdk()->disputes->all($params)->toArray());
+            ->get(fn (): Collection => $this->sdk()->disputes->all($params));
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            return [];
-        }
-
-        $items = [];
-        foreach ($data as $entry) {
-            if (is_array($entry)) {
-                $items[] = StripeDisputeData::from($entry);
-            }
-        }
-
-        return $items;
+        return $this->expectInstance($response, Collection::class);
     }
 }

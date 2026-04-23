@@ -4,44 +4,48 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
-use Integrations\Adapters\Stripe\Data\StripeChargeData;
 use Integrations\Adapters\Stripe\StripeResource;
+use Stripe\Charge;
+use Stripe\Collection;
 
 class StripeCharges extends StripeResource
 {
-    public function retrieve(string $id): StripeChargeData
+    public function retrieve(string $id): Charge
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("charges/{$id}")
-            ->get(fn (): array => $this->sdk()->charges->retrieve($id)->toArray());
+            ->get(fn (): Charge => $this->sdk()->charges->retrieve($id));
 
-        return StripeChargeData::from($response);
+        return $this->expectInstance($response, Charge::class);
     }
 
-    public function capture(string $id, ?int $amount = null, ?string $receiptEmail = null): StripeChargeData
+    public function capture(string $id, ?int $amount = null, ?string $receiptEmail = null): Charge
     {
+        $this->assertId($id);
+
         $params = [];
         if ($amount !== null) {
+            $this->assertPositive($amount, 'amount');
             $params['amount'] = $amount;
         }
         if ($receiptEmail !== null) {
             $params['receipt_email'] = $receiptEmail;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("charges/{$id}/capture")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->charges->capture($id, $params)->toArray());
+            ->post(fn (): Charge => $this->sdk()->charges->capture($id, $params));
 
-        return StripeChargeData::from($response);
+        return $this->expectInstance($response, Charge::class);
     }
 
     /**
-     * @return list<StripeChargeData>
+     * @return Collection<Charge>
      */
-    public function list(?string $customer = null, ?string $paymentIntent = null, ?int $limit = null): array
+    public function list(?string $customer = null, ?string $paymentIntent = null, ?int $limit = null): Collection
     {
         $params = [];
         if ($customer !== null) {
@@ -51,27 +55,15 @@ class StripeCharges extends StripeResource
             $params['payment_intent'] = $paymentIntent;
         }
         if ($limit !== null) {
+            $this->assertPositive($limit, 'limit');
             $params['limit'] = $limit;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('charges')
             ->withData($params)
-            ->get(fn (): array => $this->sdk()->charges->all($params)->toArray());
+            ->get(fn (): Collection => $this->sdk()->charges->all($params));
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            return [];
-        }
-
-        $items = [];
-        foreach ($data as $entry) {
-            if (is_array($entry)) {
-                $items[] = StripeChargeData::from($entry);
-            }
-        }
-
-        return $items;
+        return $this->expectInstance($response, Collection::class);
     }
 }

@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Illuminate\Support\Str;
-use Integrations\Adapters\Stripe\Data\StripeRefundData;
 use Integrations\Adapters\Stripe\StripeResource;
 use InvalidArgumentException;
+use Stripe\Collection;
+use Stripe\Refund;
 
 class StripeRefunds extends StripeResource
 {
@@ -28,7 +29,7 @@ class StripeRefunds extends StripeResource
         ?string $reason = null,
         ?array $metadata = null,
         ?string $idempotencyKey = null,
-    ): StripeRefundData {
+    ): Refund {
         if (($paymentIntent === null) === ($charge === null)) {
             throw new InvalidArgumentException(
                 'StripeRefunds::create requires exactly one of $paymentIntent or $charge.',
@@ -43,6 +44,7 @@ class StripeRefunds extends StripeResource
             $params['charge'] = $charge;
         }
         if ($amount !== null) {
+            $this->assertPositive($amount, 'amount');
             $params['amount'] = $amount;
         }
         if ($reason !== null) {
@@ -54,29 +56,29 @@ class StripeRefunds extends StripeResource
 
         $idempotencyKey ??= Str::uuid()->toString();
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('refunds')
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->refunds->create($params, ['idempotency_key' => $idempotencyKey])->toArray());
+            ->post(fn (): Refund => $this->sdk()->refunds->create($params, ['idempotency_key' => $idempotencyKey]));
 
-        return StripeRefundData::from($response);
+        return $this->expectInstance($response, Refund::class);
     }
 
-    public function retrieve(string $id): StripeRefundData
+    public function retrieve(string $id): Refund
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("refunds/{$id}")
-            ->get(fn (): array => $this->sdk()->refunds->retrieve($id)->toArray());
+            ->get(fn (): Refund => $this->sdk()->refunds->retrieve($id));
 
-        return StripeRefundData::from($response);
+        return $this->expectInstance($response, Refund::class);
     }
 
     /**
-     * @return list<StripeRefundData>
+     * @return Collection<Refund>
      */
-    public function list(?string $paymentIntent = null, ?string $charge = null, ?int $limit = null): array
+    public function list(?string $paymentIntent = null, ?string $charge = null, ?int $limit = null): Collection
     {
         $params = [];
         if ($paymentIntent !== null) {
@@ -86,27 +88,15 @@ class StripeRefunds extends StripeResource
             $params['charge'] = $charge;
         }
         if ($limit !== null) {
+            $this->assertPositive($limit, 'limit');
             $params['limit'] = $limit;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('refunds')
             ->withData($params)
-            ->get(fn (): array => $this->sdk()->refunds->all($params)->toArray());
+            ->get(fn (): Collection => $this->sdk()->refunds->all($params));
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            return [];
-        }
-
-        $items = [];
-        foreach ($data as $entry) {
-            if (is_array($entry)) {
-                $items[] = StripeRefundData::from($entry);
-            }
-        }
-
-        return $items;
+        return $this->expectInstance($response, Collection::class);
     }
 }

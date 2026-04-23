@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Illuminate\Support\Str;
-use Integrations\Adapters\Stripe\Data\StripePaymentIntentData;
 use Integrations\Adapters\Stripe\StripeResource;
+use Stripe\Collection;
+use Stripe\PaymentIntent;
 
 /**
  * Wrapper around Stripe's PaymentIntent service. Exposes typed named arguments
  * for the common fields. When you need a Stripe option we haven't exposed yet,
- * extend this class or open a PR against the adapter — the deliberate
+ * extend this class or open a PR against the adapter; the deliberate
  * alternative is a `$params` passthrough that breaks type inference and makes
  * the adapter a thin rename over `\Stripe\StripeClient`.
  */
@@ -33,7 +34,9 @@ class StripePaymentIntents extends StripeResource
         ?array $metadata = null,
         bool $automaticPaymentMethods = true,
         ?string $idempotencyKey = null,
-    ): StripePaymentIntentData {
+    ): PaymentIntent {
+        $this->assertPositive($amount, 'amount');
+
         $params = [
             'amount' => $amount,
             'currency' => $currency,
@@ -55,23 +58,23 @@ class StripePaymentIntents extends StripeResource
 
         $idempotencyKey ??= Str::uuid()->toString();
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('payment_intents')
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->create($params, ['idempotency_key' => $idempotencyKey])->toArray());
+            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->create($params, ['idempotency_key' => $idempotencyKey]));
 
-        return StripePaymentIntentData::from($response);
+        return $this->expectInstance($response, PaymentIntent::class);
     }
 
-    public function retrieve(string $id): StripePaymentIntentData
+    public function retrieve(string $id): PaymentIntent
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("payment_intents/{$id}")
-            ->get(fn (): array => $this->sdk()->paymentIntents->retrieve($id)->toArray());
+            ->get(fn (): PaymentIntent => $this->sdk()->paymentIntents->retrieve($id));
 
-        return StripePaymentIntentData::from($response);
+        return $this->expectInstance($response, PaymentIntent::class);
     }
 
     /**
@@ -82,7 +85,9 @@ class StripePaymentIntents extends StripeResource
         ?string $description = null,
         ?string $receiptEmail = null,
         ?array $metadata = null,
-    ): StripePaymentIntentData {
+    ): PaymentIntent {
+        $this->assertId($id);
+
         $params = [];
         if ($description !== null) {
             $params['description'] = $description;
@@ -94,17 +99,18 @@ class StripePaymentIntents extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->update($id, $params)->toArray());
+            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->update($id, $params));
 
-        return StripePaymentIntentData::from($response);
+        return $this->expectInstance($response, PaymentIntent::class);
     }
 
-    public function confirm(string $id, ?string $paymentMethod = null, ?string $idempotencyKey = null): StripePaymentIntentData
+    public function confirm(string $id, ?string $paymentMethod = null, ?string $idempotencyKey = null): PaymentIntent
     {
+        $this->assertId($id);
+
         $params = [];
         if ($paymentMethod !== null) {
             $params['payment_method'] = $paymentMethod;
@@ -112,35 +118,38 @@ class StripePaymentIntents extends StripeResource
 
         $idempotencyKey ??= Str::uuid()->toString();
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}/confirm")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->confirm($id, $params, ['idempotency_key' => $idempotencyKey])->toArray());
+            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->confirm($id, $params, ['idempotency_key' => $idempotencyKey]));
 
-        return StripePaymentIntentData::from($response);
+        return $this->expectInstance($response, PaymentIntent::class);
     }
 
-    public function capture(string $id, ?int $amountToCapture = null, ?string $idempotencyKey = null): StripePaymentIntentData
+    public function capture(string $id, ?int $amountToCapture = null, ?string $idempotencyKey = null): PaymentIntent
     {
+        $this->assertId($id);
+
         $params = [];
         if ($amountToCapture !== null) {
+            $this->assertPositive($amountToCapture, 'amountToCapture');
             $params['amount_to_capture'] = $amountToCapture;
         }
 
         $idempotencyKey ??= Str::uuid()->toString();
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}/capture")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->capture($id, $params, ['idempotency_key' => $idempotencyKey])->toArray());
+            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->capture($id, $params, ['idempotency_key' => $idempotencyKey]));
 
-        return StripePaymentIntentData::from($response);
+        return $this->expectInstance($response, PaymentIntent::class);
     }
 
-    public function cancel(string $id, ?string $cancellationReason = null, ?string $idempotencyKey = null): StripePaymentIntentData
+    public function cancel(string $id, ?string $cancellationReason = null, ?string $idempotencyKey = null): PaymentIntent
     {
+        $this->assertId($id);
+
         $params = [];
         if ($cancellationReason !== null) {
             $params['cancellation_reason'] = $cancellationReason;
@@ -148,46 +157,33 @@ class StripePaymentIntents extends StripeResource
 
         $idempotencyKey ??= Str::uuid()->toString();
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}/cancel")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->cancel($id, $params, ['idempotency_key' => $idempotencyKey])->toArray());
+            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->cancel($id, $params, ['idempotency_key' => $idempotencyKey]));
 
-        return StripePaymentIntentData::from($response);
+        return $this->expectInstance($response, PaymentIntent::class);
     }
 
     /**
-     * @return list<StripePaymentIntentData>
+     * @return Collection<PaymentIntent>
      */
-    public function list(?string $customer = null, ?int $limit = null): array
+    public function list(?string $customer = null, ?int $limit = null): Collection
     {
         $params = [];
         if ($customer !== null) {
             $params['customer'] = $customer;
         }
         if ($limit !== null) {
+            $this->assertPositive($limit, 'limit');
             $params['limit'] = $limit;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('payment_intents')
             ->withData($params)
-            ->get(fn (): array => $this->sdk()->paymentIntents->all($params)->toArray());
+            ->get(fn (): Collection => $this->sdk()->paymentIntents->all($params));
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            return [];
-        }
-
-        $items = [];
-        foreach ($data as $entry) {
-            if (is_array($entry)) {
-                $items[] = StripePaymentIntentData::from($entry);
-            }
-        }
-
-        return $items;
+        return $this->expectInstance($response, Collection::class);
     }
 }

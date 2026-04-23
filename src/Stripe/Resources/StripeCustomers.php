@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
-use Integrations\Adapters\Stripe\Data\StripeCustomerData;
 use Integrations\Adapters\Stripe\StripeResource;
+use Stripe\Collection;
+use Stripe\Customer;
 
 class StripeCustomers extends StripeResource
 {
@@ -18,7 +19,7 @@ class StripeCustomers extends StripeResource
         ?string $description = null,
         ?string $phone = null,
         ?array $metadata = null,
-    ): StripeCustomerData {
+    ): Customer {
         $params = [];
         if ($email !== null) {
             $params['email'] = $email;
@@ -36,23 +37,23 @@ class StripeCustomers extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('customers')
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->customers->create($params)->toArray());
+            ->post(fn (): Customer => $this->sdk()->customers->create($params));
 
-        return StripeCustomerData::from($response);
+        return $this->expectInstance($response, Customer::class);
     }
 
-    public function retrieve(string $id): StripeCustomerData
+    public function retrieve(string $id): Customer
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("customers/{$id}")
-            ->get(fn (): array => $this->sdk()->customers->retrieve($id)->toArray());
+            ->get(fn (): Customer => $this->sdk()->customers->retrieve($id));
 
-        return StripeCustomerData::from($response);
+        return $this->expectInstance($response, Customer::class);
     }
 
     /**
@@ -65,7 +66,9 @@ class StripeCustomers extends StripeResource
         ?string $description = null,
         ?string $phone = null,
         ?array $metadata = null,
-    ): StripeCustomerData {
+    ): Customer {
+        $this->assertId($id);
+
         $params = [];
         if ($email !== null) {
             $params['email'] = $email;
@@ -83,59 +86,44 @@ class StripeCustomers extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("customers/{$id}")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->customers->update($id, $params)->toArray());
+            ->post(fn (): Customer => $this->sdk()->customers->update($id, $params));
 
-        return StripeCustomerData::from($response);
+        return $this->expectInstance($response, Customer::class);
     }
 
-    /**
-     * @return array<string, mixed> Raw deletion receipt (e.g. `['id' => ..., 'deleted' => true]`).
-     */
-    public function delete(string $id): array
+    public function delete(string $id): Customer
     {
-        /** @var array<string, mixed> $response */
+        $this->assertId($id);
+
         $response = $this->integration
             ->to("customers/{$id}")
-            ->delete(fn (): array => $this->sdk()->customers->delete($id)->toArray());
+            ->delete(fn (): Customer => $this->sdk()->customers->delete($id));
 
-        return $response;
+        return $this->expectInstance($response, Customer::class);
     }
 
     /**
-     * @return list<StripeCustomerData>
+     * @return Collection<Customer>
      */
-    public function list(?string $email = null, ?int $limit = null): array
+    public function list(?string $email = null, ?int $limit = null): Collection
     {
         $params = [];
         if ($email !== null) {
             $params['email'] = $email;
         }
         if ($limit !== null) {
+            $this->assertPositive($limit, 'limit');
             $params['limit'] = $limit;
         }
 
-        /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('customers')
             ->withData($params)
-            ->get(fn (): array => $this->sdk()->customers->all($params)->toArray());
+            ->get(fn (): Collection => $this->sdk()->customers->all($params));
 
-        $data = $response['data'] ?? [];
-        if (! is_array($data)) {
-            return [];
-        }
-
-        $items = [];
-        foreach ($data as $entry) {
-            if (is_array($entry)) {
-                $items[] = StripeCustomerData::from($entry);
-            }
-        }
-
-        return $items;
+        return $this->expectInstance($response, Collection::class);
     }
 }
