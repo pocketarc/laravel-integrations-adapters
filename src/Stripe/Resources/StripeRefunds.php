@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
-use Illuminate\Support\Str;
 use Integrations\Adapters\Stripe\StripeResource;
 use InvalidArgumentException;
 use Stripe\Collection;
@@ -38,9 +37,11 @@ class StripeRefunds extends StripeResource
 
         $params = [];
         if ($paymentIntent !== null) {
+            $this->assertId($paymentIntent);
             $params['payment_intent'] = $paymentIntent;
         }
         if ($charge !== null) {
+            $this->assertId($charge);
             $params['charge'] = $charge;
         }
         if ($amount !== null) {
@@ -54,7 +55,7 @@ class StripeRefunds extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        $idempotencyKey ??= Str::uuid()->toString();
+        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
             ->to('refunds')
@@ -82,9 +83,11 @@ class StripeRefunds extends StripeResource
     {
         $params = [];
         if ($paymentIntent !== null) {
+            $this->assertId($paymentIntent);
             $params['payment_intent'] = $paymentIntent;
         }
         if ($charge !== null) {
+            $this->assertId($charge);
             $params['charge'] = $charge;
         }
         if ($limit !== null) {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
-use Illuminate\Support\Str;
 use Integrations\Adapters\Stripe\StripeResource;
 use Stripe\Collection;
 use Stripe\PaymentIntent;
@@ -44,6 +43,7 @@ class StripePaymentIntents extends StripeResource
         ];
 
         if ($customer !== null) {
+            $this->assertId($customer);
             $params['customer'] = $customer;
         }
         if ($receiptEmail !== null) {
@@ -56,7 +56,7 @@ class StripePaymentIntents extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        $idempotencyKey ??= Str::uuid()->toString();
+        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
             ->to('payment_intents')
@@ -113,10 +113,11 @@ class StripePaymentIntents extends StripeResource
 
         $params = [];
         if ($paymentMethod !== null) {
+            $this->assertId($paymentMethod);
             $params['payment_method'] = $paymentMethod;
         }
 
-        $idempotencyKey ??= Str::uuid()->toString();
+        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
             ->to("payment_intents/{$id}/confirm")
@@ -136,7 +137,7 @@ class StripePaymentIntents extends StripeResource
             $params['amount_to_capture'] = $amountToCapture;
         }
 
-        $idempotencyKey ??= Str::uuid()->toString();
+        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
             ->to("payment_intents/{$id}/capture")
@@ -155,7 +156,7 @@ class StripePaymentIntents extends StripeResource
             $params['cancellation_reason'] = $cancellationReason;
         }
 
-        $idempotencyKey ??= Str::uuid()->toString();
+        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
             ->to("payment_intents/{$id}/cancel")
@@ -172,6 +173,7 @@ class StripePaymentIntents extends StripeResource
     {
         $params = [];
         if ($customer !== null) {
+            $this->assertId($customer);
             $params['customer'] = $customer;
         }
         if ($limit !== null) {

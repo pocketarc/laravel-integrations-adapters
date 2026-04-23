@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe;
 
+use Illuminate\Support\Str;
 use Integrations\Models\Integration;
 use InvalidArgumentException;
 use Stripe\StripeClient as StripeSdkClient;
@@ -41,6 +42,24 @@ abstract class StripeResource
                 $value,
             ));
         }
+    }
+
+    /**
+     * Null returns a fresh UUID so core retries inside one call stay idempotent.
+     * A blank string is rejected rather than forwarded, since it silently turns
+     * off Stripe's duplicate protection.
+     */
+    protected function resolveIdempotencyKey(?string $key): string
+    {
+        if ($key === null) {
+            return Str::uuid()->toString();
+        }
+
+        if ($key === '') {
+            throw new InvalidArgumentException('idempotencyKey must not be empty when provided.');
+        }
+
+        return $key;
     }
 
     /**

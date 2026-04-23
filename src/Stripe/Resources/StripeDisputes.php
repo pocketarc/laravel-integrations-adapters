@@ -70,9 +70,11 @@ class StripeDisputes extends StripeResource
     {
         $params = [];
         if ($charge !== null) {
+            $this->assertId($charge);
             $params['charge'] = $charge;
         }
         if ($paymentIntent !== null) {
+            $this->assertId($paymentIntent);
             $params['payment_intent'] = $paymentIntent;
         }
         if ($limit !== null) {

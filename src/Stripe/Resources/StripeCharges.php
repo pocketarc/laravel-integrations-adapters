@@ -21,8 +21,12 @@ class StripeCharges extends StripeResource
         return $this->expectInstance($response, Charge::class);
     }
 
-    public function capture(string $id, ?int $amount = null, ?string $receiptEmail = null): Charge
-    {
+    public function capture(
+        string $id,
+        ?int $amount = null,
+        ?string $receiptEmail = null,
+        ?string $idempotencyKey = null,
+    ): Charge {
         $this->assertId($id);
 
         $params = [];
@@ -34,10 +38,12 @@ class StripeCharges extends StripeResource
             $params['receipt_email'] = $receiptEmail;
         }
 
+        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
+
         $response = $this->integration
             ->to("charges/{$id}/capture")
             ->withData($params)
-            ->post(fn (): Charge => $this->sdk()->charges->capture($id, $params));
+            ->post(fn (): Charge => $this->sdk()->charges->capture($id, $params, ['idempotency_key' => $idempotencyKey]));
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -49,9 +55,11 @@ class StripeCharges extends StripeResource
     {
         $params = [];
         if ($customer !== null) {
+            $this->assertId($customer);
             $params['customer'] = $customer;
         }
         if ($paymentIntent !== null) {
+            $this->assertId($paymentIntent);
             $params['payment_intent'] = $paymentIntent;
         }
         if ($limit !== null) {
