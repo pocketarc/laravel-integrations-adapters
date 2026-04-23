@@ -11,9 +11,7 @@ use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
 use Safe\Exceptions\JsonException;
-use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
-use Stripe\StripeClient as StripeSdkClient;
 use Stripe\Webhook;
 
 use function Safe\json_decode;
@@ -154,18 +152,10 @@ class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProv
     #[\Override]
     public function healthCheck(Integration $integration): bool
     {
-        $credentials = $integration->credentials;
-        if (! $credentials instanceof StripeCredentials) {
-            return false;
-        }
-
         try {
-            $sdk = new StripeSdkClient($credentials->api_key);
-            $sdk->balance->retrieve();
+            (new StripeClient($integration))->getSdkClient()->balance->retrieve();
 
             return true;
-        } catch (ApiErrorException) {
-            return false;
         } catch (\Throwable) {
             return false;
         }

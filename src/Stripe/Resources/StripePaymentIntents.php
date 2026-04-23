@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
+use Illuminate\Support\Str;
 use Integrations\Adapters\Stripe\Data\StripePaymentIntentData;
 use Integrations\Adapters\Stripe\StripeResource;
 
@@ -17,6 +18,10 @@ use Integrations\Adapters\Stripe\StripeResource;
 class StripePaymentIntents extends StripeResource
 {
     /**
+     * An auto-generated idempotency key covers core retries inside one call,
+     * not re-issues from a queued job. Pass a stable key (e.g. derived from
+     * the originating domain event) when you need cross-invocation safety.
+     *
      * @param  array<string, string>|null  $metadata
      */
     public function create(
@@ -27,6 +32,7 @@ class StripePaymentIntents extends StripeResource
         ?string $description = null,
         ?array $metadata = null,
         bool $automaticPaymentMethods = true,
+        ?string $idempotencyKey = null,
     ): StripePaymentIntentData {
         $params = [
             'amount' => $amount,
@@ -47,11 +53,13 @@ class StripePaymentIntents extends StripeResource
             $params['metadata'] = $metadata;
         }
 
+        $idempotencyKey ??= Str::uuid()->toString();
+
         /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to('payment_intents')
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->create($params)->toArray());
+            ->post(fn (): array => $this->sdk()->paymentIntents->create($params, ['idempotency_key' => $idempotencyKey])->toArray());
 
         return StripePaymentIntentData::from($response);
     }
@@ -95,50 +103,56 @@ class StripePaymentIntents extends StripeResource
         return StripePaymentIntentData::from($response);
     }
 
-    public function confirm(string $id, ?string $paymentMethod = null): StripePaymentIntentData
+    public function confirm(string $id, ?string $paymentMethod = null, ?string $idempotencyKey = null): StripePaymentIntentData
     {
         $params = [];
         if ($paymentMethod !== null) {
             $params['payment_method'] = $paymentMethod;
         }
 
+        $idempotencyKey ??= Str::uuid()->toString();
+
         /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}/confirm")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->confirm($id, $params)->toArray());
+            ->post(fn (): array => $this->sdk()->paymentIntents->confirm($id, $params, ['idempotency_key' => $idempotencyKey])->toArray());
 
         return StripePaymentIntentData::from($response);
     }
 
-    public function capture(string $id, ?int $amountToCapture = null): StripePaymentIntentData
+    public function capture(string $id, ?int $amountToCapture = null, ?string $idempotencyKey = null): StripePaymentIntentData
     {
         $params = [];
         if ($amountToCapture !== null) {
             $params['amount_to_capture'] = $amountToCapture;
         }
 
+        $idempotencyKey ??= Str::uuid()->toString();
+
         /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}/capture")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->capture($id, $params)->toArray());
+            ->post(fn (): array => $this->sdk()->paymentIntents->capture($id, $params, ['idempotency_key' => $idempotencyKey])->toArray());
 
         return StripePaymentIntentData::from($response);
     }
 
-    public function cancel(string $id, ?string $cancellationReason = null): StripePaymentIntentData
+    public function cancel(string $id, ?string $cancellationReason = null, ?string $idempotencyKey = null): StripePaymentIntentData
     {
         $params = [];
         if ($cancellationReason !== null) {
             $params['cancellation_reason'] = $cancellationReason;
         }
 
+        $idempotencyKey ??= Str::uuid()->toString();
+
         /** @var array<string, mixed> $response */
         $response = $this->integration
             ->to("payment_intents/{$id}/cancel")
             ->withData($params)
-            ->post(fn (): array => $this->sdk()->paymentIntents->cancel($id, $params)->toArray());
+            ->post(fn (): array => $this->sdk()->paymentIntents->cancel($id, $params, ['idempotency_key' => $idempotencyKey])->toArray());
 
         return StripePaymentIntentData::from($response);
     }
