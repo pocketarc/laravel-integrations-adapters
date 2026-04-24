@@ -7,6 +7,7 @@ namespace Integrations\Adapters\Postmark;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Integrations\Adapters\Postmark\Data\PostmarkBounceWebhookData;
 use Integrations\Adapters\Postmark\Data\PostmarkClickWebhookData;
 use Integrations\Adapters\Postmark\Data\PostmarkDeliveryWebhookData;
@@ -307,54 +308,45 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
             'mail.mailers.postmark.message_stream_id' => $stream,
         ]);
 
+        // Three caches sit between us and the next Mail::send():
+        //   1. MailManager's own per-mailer cache (Mail::forgetMailers)
+        //   2. The Mail facade's resolved-instance cache
+        //      (Mail::clearResolvedInstance)
+        //   3. The container's singleton (app()->forgetInstance)
+        // Forgetting only the container leaves the facade holding the stale
+        // manager, so anything that already touched Mail::* in this request
+        // would keep using the old token.
         if (app()->resolved('mail.manager')) {
+            Mail::forgetMailers();
+            Mail::clearResolvedInstance('mail.manager');
             app()->forgetInstance('mail.manager');
         }
     }
 
     /**
+     * Build the typed event for the given record type and dispatch it. Using
+     * `match` (with no default arm) means PHPStan flags any new
+     * PostmarkWebhookRecordType case that isn't handled here, and PHP itself
+     * throws UnhandledMatchError at runtime if a new case ever slipped past
+     * static analysis. The previous if/elseif chain silently fell through
+     * to PostmarkInboundReceived, which would have been wrong for any
+     * future record type Postmark adds.
+     *
      * @param  array<string, mixed>  $payload
      */
     private function dispatchTypedEvent(Integration $integration, PostmarkWebhookRecordType $type, array $payload): void
     {
-        if ($type === PostmarkWebhookRecordType::Delivery) {
-            PostmarkDeliveryReceived::dispatch($integration, PostmarkDeliveryWebhookData::from($payload));
+        $event = match ($type) {
+            PostmarkWebhookRecordType::Delivery => new PostmarkDeliveryReceived($integration, PostmarkDeliveryWebhookData::from($payload)),
+            PostmarkWebhookRecordType::Bounce => new PostmarkBounceReceived($integration, PostmarkBounceWebhookData::from($payload)),
+            PostmarkWebhookRecordType::Open => new PostmarkOpenReceived($integration, PostmarkOpenWebhookData::from($payload)),
+            PostmarkWebhookRecordType::Click => new PostmarkClickReceived($integration, PostmarkClickWebhookData::from($payload)),
+            PostmarkWebhookRecordType::SpamComplaint => new PostmarkSpamComplaintReceived($integration, PostmarkSpamComplaintWebhookData::from($payload)),
+            PostmarkWebhookRecordType::SubscriptionChange => new PostmarkSubscriptionChangeReceived($integration, PostmarkSubscriptionChangeWebhookData::from($payload)),
+            PostmarkWebhookRecordType::Inbound => new PostmarkInboundReceived($integration, PostmarkInboundWebhookData::from($payload)),
+        };
 
-            return;
-        }
-
-        if ($type === PostmarkWebhookRecordType::Bounce) {
-            PostmarkBounceReceived::dispatch($integration, PostmarkBounceWebhookData::from($payload));
-
-            return;
-        }
-
-        if ($type === PostmarkWebhookRecordType::Open) {
-            PostmarkOpenReceived::dispatch($integration, PostmarkOpenWebhookData::from($payload));
-
-            return;
-        }
-
-        if ($type === PostmarkWebhookRecordType::Click) {
-            PostmarkClickReceived::dispatch($integration, PostmarkClickWebhookData::from($payload));
-
-            return;
-        }
-
-        if ($type === PostmarkWebhookRecordType::SpamComplaint) {
-            PostmarkSpamComplaintReceived::dispatch($integration, PostmarkSpamComplaintWebhookData::from($payload));
-
-            return;
-        }
-
-        if ($type === PostmarkWebhookRecordType::SubscriptionChange) {
-            PostmarkSubscriptionChangeReceived::dispatch($integration, PostmarkSubscriptionChangeWebhookData::from($payload));
-
-            return;
-        }
-
-        // Inbound is the only remaining case in PostmarkWebhookRecordType.
-        PostmarkInboundReceived::dispatch($integration, PostmarkInboundWebhookData::from($payload));
+        event($event);
     }
 
     /**

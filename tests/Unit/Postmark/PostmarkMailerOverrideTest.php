@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Tests\Unit\Postmark;
 
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
 use Integrations\Adapters\IntegrationAdaptersServiceProvider;
 use Integrations\Adapters\Postmark\PostmarkProvider;
@@ -160,6 +161,39 @@ class PostmarkMailerOverrideTest extends TestCase
         $this->expectException(\RuntimeException::class);
 
         (new PostmarkProvider)->useForMail($integration);
+    }
+
+    public function test_use_for_mail_invalidates_facade_and_container_caches(): void
+    {
+        $this->setBaselineMailConfig(preExisting: 'env-token');
+
+        // Touching the Mail facade populates both the container's
+        // mail.manager singleton AND the facade's static
+        // resolved-instance cache. Without invalidating both, anything
+        // that already used Mail::* in this request would keep talking
+        // to the old MailManager and miss the swap.
+        $stale = Mail::getFacadeRoot();
+
+        $integration = $this->createIntegration(
+            providerKey: 'postmark',
+            providerClass: PostmarkProvider::class,
+            credentials: ['server_token' => 'srv-tenant-1'],
+            metadata: ['message_stream' => 'broadcasts'],
+        );
+
+        (new PostmarkProvider)->useForMail($integration);
+
+        // Re-resolving via the facade must yield a different instance —
+        // proves both the container singleton and the facade's
+        // resolved-instance cache were cleared. (Container::resolved()
+        // is sticky once the abstract has ever been resolved, so the
+        // identity check is the reliable signal.)
+        $fresh = Mail::getFacadeRoot();
+        $this->assertNotSame($stale, $fresh);
+
+        // And the new manager reads the new config.
+        $this->assertSame('srv-tenant-1', config('services.postmark.token'));
+        $this->assertSame('broadcasts', config('mail.mailers.postmark.message_stream_id'));
     }
 
     /**
