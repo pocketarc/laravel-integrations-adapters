@@ -9,10 +9,10 @@ use Integrations\Adapters\Postmark\Enums\PostmarkBounceType;
 use Spatie\LaravelData\Data;
 
 /**
- * A single bounce as returned by the Bounces API. Same field set as the
- * webhook bounce payload — Postmark deliberately matches the two — but
- * we keep them as separate Data classes so changes to the webhook
- * representation can't break the API one and vice versa.
+ * A single bounce as returned by the Bounces API. The field set matches
+ * the webhook bounce payload by design; we still keep the two as separate
+ * Data classes so changes to the webhook representation can't break the
+ * API one and vice versa.
  */
 class PostmarkBounceData extends Data
 {

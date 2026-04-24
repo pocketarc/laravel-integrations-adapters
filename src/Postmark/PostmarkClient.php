@@ -17,7 +17,7 @@ use RuntimeException;
  * Thin wrapper around `wildbit/postmark-php`'s PostmarkClient. Exposes one
  * accessor per resource we cover. Resource methods route through
  * `Integration::request()` so every call is logged, rate-limited, retried,
- * and contributes to health tracking — Postmark-specific Guzzle internals
+ * and contributes to health tracking. Postmark-specific Guzzle internals
  * stay below this line.
  *
  * Credentials are validated lazily (on first SDK access via `boot()`), so

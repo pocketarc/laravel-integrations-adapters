@@ -7,11 +7,10 @@ namespace Integrations\Adapters\Postmark\Data;
 use Spatie\LaravelData\Data;
 
 /**
- * The "outbound overview" stats — totals for the most useful aggregate
- * metrics over a date range. The full stats API has many endpoints (per
- * tag, per platform, per client), all keyed off the same date filter; we
- * surface only the overview here. Everything else is an `original`-shaped
- * passthrough away.
+ * Aggregate stats for outbound traffic over a date range. The full stats
+ * API has many endpoints (per tag, per platform, per client), all keyed
+ * off the same date filter; we surface only the overview here. Everything
+ * else is an `original`-shaped passthrough away.
  */
 class PostmarkOutboundStatsData extends Data
 {

@@ -16,11 +16,11 @@ use Integrations\Testing\CreatesIntegration;
  * Covers the two paths by which the Postmark adapter wires credentials
  * into Laravel's mail config:
  *
- * - the lazy service-provider hook (`registerMailerOverride()`) — fires
- *   when the host app actually resolves `mail.manager`, and only applies
- *   when there's exactly one active Postmark integration
- * - the runtime escape hatch (`useForMail()`) — always applies the
- *   integration's credentials, regardless of how many exist
+ * - the lazy service-provider hook (`registerMailerOverride()`), which
+ *   fires when the host app actually resolves `mail.manager` and only
+ *   applies when there's exactly one active Postmark integration
+ * - the runtime escape hatch (`useForMail()`), which always applies the
+ *   integration's credentials regardless of how many exist
  */
 class PostmarkMailerOverrideTest extends TestCase
 {

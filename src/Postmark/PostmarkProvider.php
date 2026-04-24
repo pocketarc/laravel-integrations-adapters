@@ -37,18 +37,19 @@ use function Safe\json_decode;
 /**
  * Postmark integration provider. Three jobs:
  *
- * 1. Standard adapter surface — credential typing, validation rules, health
- *    check via the `/server` endpoint.
- * 2. Webhook ingestion — Postmark doesn't sign with HMAC, so signature
- *    verification compares the inbound `Authorization: Basic` header against
- *    stored credentials. After verification, `handleWebhook()` always fires
- *    the generic `PostmarkWebhookReceived` event and additionally fires the
+ * 1. Standard adapter surface: credential typing, validation rules, and a
+ *    health check that hits the `/server` endpoint.
+ * 2. Webhook ingestion. Postmark doesn't sign with HMAC, so signature
+ *    verification compares the inbound `Authorization: Basic` header
+ *    against stored credentials. After verification, `handleWebhook()`
+ *    fires the generic `PostmarkWebhookReceived` event followed by the
  *    typed event matching the payload's `RecordType`.
- * 3. Mailer credentials bridge — `registerMailerOverride()` is called from
- *    the package service provider's `boot()` and lazy-wires the host app's
- *    Postmark mailer config from a single registered Postmark integration
- *    record. Multi-tenant apps with several Postmark integrations should
- *    call `useForMail()` per request to swap which one is active.
+ * 3. Mailer credentials bridge. `registerMailerOverride()` is called from
+ *    the package service provider's `boot()` and lazy-wires the host
+ *    app's Postmark mailer config from a single registered Postmark
+ *    integration record. Multi-tenant apps with several Postmark
+ *    integrations should call `useForMail()` per request to swap which
+ *    one is active.
  */
 class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider
 {
@@ -127,9 +128,9 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
 
     /**
      * Verify the webhook by comparing the inbound `Authorization: Basic` header
-     * against stored credentials. Postmark's webhook security model is HTTP
-     * Basic Auth on the URL (or IP allowlisting) — there is no per-request
-     * HMAC. Returns false if either credential side is missing so an
+     * against stored credentials. Postmark secures webhooks via HTTP Basic
+     * Auth on the URL or IP allowlisting; it does not sign individual
+     * requests. Returns false if either credential side is missing so an
      * unconfigured integration fails closed.
      */
     #[\Override]
@@ -224,7 +225,7 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
     /**
      * Lazy mailer-config bridge. Hooks the container's `mail.manager`
      * resolution so the database lookup only happens when the host app
-     * actually uses mail — we don't want to query Integrations on every
+     * actually uses mail. We don't want to query Integrations on every
      * request just to handle the case where mail might be sent.
      *
      * Skips silently for zero or multiple Postmark integrations: zero

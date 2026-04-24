@@ -8,10 +8,11 @@ use Illuminate\Support\Carbon;
 use Spatie\LaravelData\Data;
 
 /**
- * Postmark webhook payload for `RecordType: Inbound`. The full incoming
- * email — headers, bodies, attachments. Most consumers only need a few
- * routing fields (From, To, MailboxHash, Subject) plus the body; the
- * Headers, Attachments, FromFull, ToFull, CcFull, etc. live in `$original`.
+ * Postmark webhook payload for `RecordType: Inbound`. Carries the full
+ * incoming email: headers, bodies, attachments. Most consumers only need
+ * a few routing fields (From, To, MailboxHash, Subject) plus the body;
+ * the Headers, Attachments, FromFull, ToFull, CcFull, etc. live in
+ * `$original`.
  *
  * `MailboxHash` is the part of the address after the `+` (Postmark's plus-
  * addressing for routing replies back to the right thread/conversation).
@@ -54,7 +55,7 @@ class PostmarkInboundWebhookData extends Data
             try {
                 $properties['Date'] = Carbon::parse($date)->toIso8601String();
             } catch (\Throwable) {
-                // Leave the raw value — Spatie will throw a clearer error
+                // Leave the raw value alone. Spatie will throw a clearer error
                 // for genuinely malformed input than us swallowing it here.
             }
         }

@@ -21,8 +21,8 @@ use function Safe\json_encode;
  * provision them per tenant.
  *
  * Note on `list()`: the SDK's `getWebhookConfigurations()` strips the
- * Triggers/HttpAuth blocks from each entry — a known shape mismatch in
- * `wildbit/postmark-php` — so we go directly to the API for listings to
+ * Triggers/HttpAuth blocks from each entry (a known shape mismatch in
+ * `wildbit/postmark-php`), so we go directly to the API for listings to
  * preserve the full record. Single-record fetches (`get()`) use the SDK
  * because that path is not affected.
  */

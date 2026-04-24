@@ -21,8 +21,8 @@ use Postmark\PostmarkClient as PostmarkSdkClient;
 /**
  * The wildbit SDK uses Guzzle directly (not Laravel's HTTP facade), so we
  * inject a custom Guzzle client via the SDK's `setClient()` and queue
- * canned responses with a MockHandler — the same pattern the Zendesk
- * tests use.
+ * canned responses with a MockHandler. This matches how the Zendesk tests
+ * mock Zendesk's SDK.
  */
 class PostmarkClientTest extends TestCase
 {
@@ -65,7 +65,7 @@ class PostmarkClientTest extends TestCase
     public function test_deferred_credential_validation_throws_on_first_use(): void
     {
         // Construct a client against an integration with no typed
-        // credentials — the client itself constructs fine, but its
+        // credentials. The client itself constructs fine, but its
         // `boot()` on first SDK access explodes with a clear message.
         // Calling getSdkClient() directly dodges the `request()` pipeline,
         // which otherwise wraps us in provider-resolution or retry logic.

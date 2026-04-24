@@ -9,9 +9,9 @@ use Spatie\LaravelData\Data;
 
 /**
  * Postmark webhook payload for `RecordType: SpamComplaint`. The shape mirrors
- * a bounce — Postmark treats spam complaints as bounce-type 100 internally —
- * but it ships its own RecordType so consumers can react differently
- * (suppression vs reputation tracking).
+ * a bounce because Postmark treats spam complaints as bounce-type 100
+ * internally, but it ships its own RecordType so consumers can react
+ * differently (suppression vs reputation tracking).
  */
 class PostmarkSpamComplaintWebhookData extends Data
 {

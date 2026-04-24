@@ -26,10 +26,9 @@ class IntegrationAdaptersServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Postmark is the only adapter that needs to wire itself into a host
-        // framework subsystem (Laravel's mail config). The hook is lazy —
-        // see PostmarkProvider::registerMailerOverride() — so non-mail
-        // requests don't pay any cost for this.
+        // Postmark is the only adapter that touches Laravel's mail config.
+        // registerMailerOverride() is lazy, so non-mail requests don't pay
+        // any cost for this.
         PostmarkProvider::registerMailerOverride();
     }
 }

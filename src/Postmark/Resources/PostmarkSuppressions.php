@@ -9,11 +9,11 @@ use Integrations\Adapters\Postmark\PostmarkResource;
 use Postmark\Models\Suppressions\SuppressionChangeRequest;
 
 /**
- * Per-stream suppression list management. Each Postmark message stream has
- * its own list — suppressing `user@example.com` on the transactional
- * `outbound` stream does not stop them receiving from a `broadcasts`
- * stream, and vice versa. The default stream comes from the integration's
- * metadata; callers can override per-call.
+ * Per-stream suppression list management. Each Postmark message stream
+ * has its own list, so suppressing `user@example.com` on the
+ * transactional `outbound` stream does not stop them receiving from a
+ * `broadcasts` stream (and vice versa). The default stream comes from
+ * the integration's metadata; callers can override per-call.
  */
 class PostmarkSuppressions extends PostmarkResource
 {
@@ -57,8 +57,8 @@ class PostmarkSuppressions extends PostmarkResource
     /**
      * Suppress one or more recipients on a stream. Returns true on success;
      * the per-recipient outcome is in the API response (FailureMessage,
-     * Status) but most callers don't need the breakdown — failures throw
-     * via the standard error pipeline.
+     * Status), but most callers don't need that breakdown because failures
+     * throw via the standard error pipeline.
      *
      * @param  list<string>  $emailAddresses
      */

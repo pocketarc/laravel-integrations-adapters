@@ -13,7 +13,8 @@ use Spatie\LaravelData\Data;
  * stream-scoped resources (Suppressions). Defaults to Postmark's standard
  * transactional stream so single-stream setups need no configuration.
  *
- * `server_name` is purely for display (admin UIs) — Postmark ignores it.
+ * `server_name` is purely for display in admin UIs; Postmark itself
+ * ignores it.
  */
 class PostmarkMetadata extends Data
 {

@@ -10,10 +10,10 @@ use Integrations\Adapters\Postmark\PostmarkResource;
 
 /**
  * Bounces API: query past bounces, fetch raw dumps, reactivate suppressed
- * recipients. The `list()` method is offset-paginated by Postmark — pass
- * `offset` and `count` in increments to walk through; we don't auto-iterate
- * because the result set can be very large and consumers usually filter
- * by `type` or `fromdate`/`todate`.
+ * recipients. Postmark paginates `list()` by offset, so callers walk
+ * through with successive `offset` + `count` calls. We don't auto-iterate
+ * because the result set can be very large, and consumers usually filter
+ * by `type` or `fromdate`/`todate` first.
  */
 class PostmarkBounces extends PostmarkResource
 {

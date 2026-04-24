@@ -10,9 +10,9 @@ use Spatie\LaravelData\Data;
 
 /**
  * Wrapper for GET /message-streams/{stream}/suppressions/dump. Postmark
- * returns the entire suppression list for a stream — there's no
- * pagination — so the only useful field beyond the entries is the count
- * for sanity-checking large dumps.
+ * returns the entire suppression list for a stream in one shot, so the
+ * only useful field beyond the entries themselves is the count, handy for
+ * sanity-checking large dumps.
  */
 class PostmarkSuppressionListResponse extends Data
 {

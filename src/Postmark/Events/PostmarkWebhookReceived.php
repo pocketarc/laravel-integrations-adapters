@@ -12,8 +12,8 @@ use Integrations\Models\Integration;
  * verified delivery, regardless of `RecordType`. Consumers that want a
  * single sink for audit/log/debug listen here; consumers that care about a
  * specific record type listen for the typed event (PostmarkBounceReceived,
- * PostmarkInboundReceived, etc.) instead. Both fire — generic first, then
- * the typed one.
+ * PostmarkInboundReceived, etc.) instead. Both fire on every delivery,
+ * with the generic event going out first.
  */
 final class PostmarkWebhookReceived
 {

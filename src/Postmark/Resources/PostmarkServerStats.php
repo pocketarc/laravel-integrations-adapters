@@ -8,10 +8,10 @@ use Integrations\Adapters\Postmark\Data\PostmarkOutboundStatsData;
 use Integrations\Adapters\Postmark\PostmarkResource;
 
 /**
- * Aggregate stats for outbound traffic on this server. v1 surfaces only
- * the overview endpoint — the per-tag/per-platform/per-client breakdowns
- * are accessible directly through the SDK if a consumer needs them, but
- * the overview is what dashboards usually want.
+ * Aggregate stats for outbound traffic on this server. v1 only surfaces
+ * the overview endpoint, since that's what dashboards usually want; the
+ * per-tag, per-platform, and per-client breakdowns are still accessible
+ * directly through the SDK if a consumer needs them.
  *
  * Dates use Postmark's `YYYY-MM-DD` format and are inclusive on both ends.
  */
