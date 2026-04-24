@@ -62,8 +62,11 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
     {
         return [
             'server_token' => ['required', 'string'],
-            'webhook_username' => ['nullable', 'string'],
-            'webhook_password' => ['nullable', 'string'],
+            // Webhook auth must be configured as a pair: verifyWebhookSignature
+            // needs both halves, so accepting one without the other would
+            // silently fail every inbound delivery.
+            'webhook_username' => ['nullable', 'string', 'required_with:webhook_password'],
+            'webhook_password' => ['nullable', 'string', 'required_with:webhook_username'],
             'account_token' => ['nullable', 'string'],
         ];
     }
@@ -75,7 +78,11 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
     public function metadataRules(): array
     {
         return [
-            'message_stream' => ['nullable', 'string'],
+            // `message_stream` is omitted-or-string. PostmarkMetadata's
+            // constructor supplies the 'outbound' default when the field is
+            // absent; allowing explicit null here would just bounce off the
+            // non-nullable `string` property during hydration.
+            'message_stream' => ['sometimes', 'string'],
             'server_name' => ['nullable', 'string'],
         ];
     }

@@ -65,16 +65,34 @@ class PostmarkProviderTest extends TestCase
         $this->assertContains('required', $serverTokenRule);
     }
 
-    public function test_metadata_rules_are_all_optional(): void
+    public function test_credential_rules_require_webhook_credentials_as_a_pair(): void
+    {
+        $rules = (new PostmarkProvider)->credentialRules();
+
+        $usernameRule = $rules['webhook_username'];
+        $passwordRule = $rules['webhook_password'];
+
+        $this->assertIsArray($usernameRule);
+        $this->assertIsArray($passwordRule);
+
+        $this->assertContains('required_with:webhook_password', $usernameRule);
+        $this->assertContains('required_with:webhook_username', $passwordRule);
+    }
+
+    public function test_metadata_rules_treat_message_stream_as_optional_but_non_null(): void
     {
         $rules = (new PostmarkProvider)->metadataRules();
 
         $this->assertArrayHasKey('message_stream', $rules);
         $this->assertArrayHasKey('server_name', $rules);
 
+        // The DTO holds `string $message_stream = 'outbound'` so the field
+        // must be either absent (default kicks in) or a string. Explicit
+        // null would fail hydration, so it must not be allowed by the rule.
         $streamRule = $rules['message_stream'];
         $this->assertIsArray($streamRule);
-        $this->assertContains('nullable', $streamRule);
+        $this->assertContains('string', $streamRule);
+        $this->assertNotContains('nullable', $streamRule);
     }
 
     public function test_data_classes(): void
