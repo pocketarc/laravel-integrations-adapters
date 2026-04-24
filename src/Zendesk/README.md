@@ -2,6 +2,12 @@
 
 Wraps the [zendesk/zendesk_api_client_php](https://github.com/zendesk/zendesk_api_client_php) SDK. Focused on tickets, users, and comments.
 
+## Installation
+
+```bash
+composer require pocketarc/laravel-integrations-adapters
+```
+
 ## Setup
 
 ```php
