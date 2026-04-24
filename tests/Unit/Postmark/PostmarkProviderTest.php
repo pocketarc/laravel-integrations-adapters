@@ -170,8 +170,7 @@ class PostmarkProviderTest extends TestCase
     {
         $integration = Integration::create(['provider' => 'postmark', 'name' => 'Postmark']);
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'Basic '.base64_encode('user:pass'));
+        $request = $this->webhookRequest('Basic '.base64_encode('user:pass'));
 
         $this->assertFalse((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -184,8 +183,7 @@ class PostmarkProviderTest extends TestCase
             credentials: ['server_token' => 'srv-abc'],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'Basic '.base64_encode('user:pass'));
+        $request = $this->webhookRequest('Basic '.base64_encode('user:pass'));
 
         $this->assertFalse((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -202,7 +200,7 @@ class PostmarkProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
+        $request = $this->webhookRequest(null);
 
         $this->assertFalse((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -219,8 +217,7 @@ class PostmarkProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'Bearer abc.def.ghi');
+        $request = $this->webhookRequest('Bearer abc.def.ghi');
 
         $this->assertFalse((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -237,8 +234,7 @@ class PostmarkProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'Basic '.base64_encode('hook-user:hook-pass'));
+        $request = $this->webhookRequest('Basic '.base64_encode('hook-user:hook-pass'));
 
         $this->assertTrue((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -258,8 +254,7 @@ class PostmarkProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'basic '.base64_encode('hook-user:hook-pass'));
+        $request = $this->webhookRequest('basic '.base64_encode('hook-user:hook-pass'));
 
         $this->assertTrue((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -276,8 +271,7 @@ class PostmarkProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'Basic '.base64_encode('hook-user:WRONG'));
+        $request = $this->webhookRequest('Basic '.base64_encode('hook-user:WRONG'));
 
         $this->assertFalse((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -294,10 +288,23 @@ class PostmarkProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
-        $request->headers->set('Authorization', 'Basic !!!not-base64!!!');
+        $request = $this->webhookRequest('Basic !!!not-base64!!!');
 
         $this->assertFalse((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
+    }
+
+    /**
+     * Symfony's ServerBag parses the Authorization header into PHP_AUTH_USER
+     * /PW only at Request construction time, so headers added afterwards
+     * via `$request->headers->set()` don't reach `$request->getUser()`.
+     * Pass it via the `$server` parameter to mirror what Apache/PHP-FPM
+     * actually populates in production.
+     */
+    private function webhookRequest(?string $authorization): Request
+    {
+        $server = $authorization !== null ? ['HTTP_AUTHORIZATION' => $authorization] : [];
+
+        return Request::create('/webhook', 'POST', server: $server, content: '{}');
     }
 
     public function test_handle_webhook_dispatches_generic_and_typed_events_for_bounce(): void

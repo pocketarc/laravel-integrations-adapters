@@ -28,11 +28,6 @@ use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
 use RuntimeException;
-use Safe\Exceptions\JsonException;
-use Safe\Exceptions\UrlException;
-
-use function Safe\base64_decode;
-use function Safe\json_decode;
 
 /**
  * Postmark integration provider. Three jobs:
@@ -132,6 +127,11 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
      * Auth on the URL or IP allowlisting; it does not sign individual
      * requests. Returns false if either credential side is missing so an
      * unconfigured integration fails closed.
+     *
+     * Symfony's HTTP foundation already parses the Authorization header
+     * (case-insensitive scheme, base64 decode, split on `:`) and exposes
+     * the result via `$request->getUser()` / `$request->getPassword()`, so
+     * we just compare those against the stored credentials in constant time.
      */
     #[\Override]
     public function verifyWebhookSignature(Integration $integration, Request $request): bool
@@ -145,27 +145,17 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
             return false;
         }
 
-        $header = $request->header('Authorization');
-        if (! is_string($header)) {
+        $user = $request->getUser();
+        $pass = $request->getPassword();
+
+        if ($user === null || $pass === null) {
             return false;
         }
 
-        // RFC 7235 §2.1: auth-scheme tokens are case-insensitive, so `basic`,
-        // `Basic`, and `BASIC` all need to work. mb_stripos() gives us that
-        // with no allocation beyond the tiny comparison.
-        if (mb_stripos($header, 'Basic ') !== 0) {
-            return false;
-        }
-
-        try {
-            $decoded = base64_decode(mb_substr($header, 6), strict: true);
-        } catch (UrlException) {
-            return false;
-        }
-
-        $expected = $credentials->webhook_username.':'.$credentials->webhook_password;
-
-        return hash_equals($expected, $decoded);
+        return hash_equals(
+            $credentials->webhook_username.':'.$credentials->webhook_password,
+            $user.':'.$pass,
+        );
     }
 
     #[\Override]
@@ -365,23 +355,9 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
      */
     private function decodePayload(Request $request): array
     {
-        try {
-            $decoded = json_decode($request->getContent(), associative: true);
-        } catch (JsonException) {
-            return [];
-        }
-
-        if (! is_array($decoded)) {
-            return [];
-        }
-
-        $payload = [];
-        foreach ($decoded as $key => $value) {
-            if (is_string($key)) {
-                $payload[$key] = $value;
-            }
-        }
-
-        return $payload;
+        // $request->json() handles malformed JSON by returning an empty
+        // InputBag and is already typed as array<string, mixed>, so no
+        // try/catch or key filtering needed here.
+        return $request->json()->all();
     }
 }

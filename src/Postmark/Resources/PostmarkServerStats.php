@@ -19,6 +19,9 @@ class PostmarkServerStats extends PostmarkResource
 {
     public function overview(?string $fromDate = null, ?string $toDate = null, ?string $tag = null, ?string $messageStream = null): ?PostmarkOutboundStatsData
     {
+        $this->assertYmdDate($fromDate, 'fromDate');
+        $this->assertYmdDate($toDate, 'toDate');
+
         return $this->executeWithErrorHandling(function () use ($fromDate, $toDate, $tag, $messageStream): ?PostmarkOutboundStatsData {
             $result = $this->integration
                 ->toAs('stats/outbound', PostmarkOutboundStatsData::class)
