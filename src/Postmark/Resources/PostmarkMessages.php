@@ -24,11 +24,13 @@ class PostmarkMessages extends PostmarkResource
      */
     public function listOutbound(int $count = 100, int $offset = 0, array $filters = []): ?PostmarkOutboundMessageListResponse
     {
-        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters): ?PostmarkOutboundMessageListResponse {
+        $stream = $filters['messagestream'] ?? $this->client->defaultMessageStream();
+
+        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters, $stream): ?PostmarkOutboundMessageListResponse {
             $result = $this->integration
                 ->toAs('messages/outbound', PostmarkOutboundMessageListResponse::class)
-                ->withData(array_merge(['count' => $count, 'offset' => $offset], $filters))
-                ->get(function () use ($count, $offset, $filters): array {
+                ->withData(array_merge(['count' => $count, 'offset' => $offset, 'messagestream' => $stream], $filters))
+                ->get(function () use ($count, $offset, $filters, $stream): array {
                     $list = $this->sdk()->getOutboundMessages(
                         count: $count,
                         offset: $offset,
@@ -40,7 +42,7 @@ class PostmarkMessages extends PostmarkResource
                         fromdate: $filters['fromdate'] ?? null,
                         todate: $filters['todate'] ?? null,
                         metadata: $filters['metadata'] ?? null,
-                        messagestream: $filters['messagestream'] ?? null,
+                        messagestream: $stream,
                     );
 
                     $messages = [];

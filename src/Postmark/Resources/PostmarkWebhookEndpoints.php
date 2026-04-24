@@ -152,16 +152,28 @@ class PostmarkWebhookEndpoints extends PostmarkResource
         /** @var array<string, mixed> $base */
         $base = get_object_vars($config);
 
-        // Triggers / HttpAuth are nested objects; flatten them so Spatie Data
-        // can populate the matching ?array fields cleanly.
-        $triggers = $base['Triggers'] ?? null;
-        if (is_object($triggers)) {
-            $base['Triggers'] = json_decode(json_encode($triggers), associative: true);
+        // Triggers / HttpAuth / HttpHeaders arrive as nested SDK objects
+        // (or arrays of objects for HttpHeaders). Flatten them to plain
+        // arrays so Spatie Data can populate the matching ?array fields
+        // the same way it does on the list() path.
+        foreach (['Triggers', 'HttpAuth'] as $field) {
+            $value = $base[$field] ?? null;
+            if (is_object($value)) {
+                $base[$field] = json_decode(json_encode($value), associative: true);
+            }
         }
 
-        $httpAuth = $base['HttpAuth'] ?? null;
-        if (is_object($httpAuth)) {
-            $base['HttpAuth'] = json_decode(json_encode($httpAuth), associative: true);
+        $headers = $base['HttpHeaders'] ?? null;
+        if (is_array($headers)) {
+            $normalized = [];
+            foreach ($headers as $header) {
+                if (is_object($header)) {
+                    $normalized[] = json_decode(json_encode($header), associative: true);
+                } elseif (is_array($header)) {
+                    $normalized[] = $header;
+                }
+            }
+            $base['HttpHeaders'] = $normalized;
         }
 
         return $base;

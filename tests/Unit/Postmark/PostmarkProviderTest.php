@@ -243,6 +243,27 @@ class PostmarkProviderTest extends TestCase
         $this->assertTrue((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
     }
 
+    public function test_webhook_signature_accepts_lowercase_basic_scheme(): void
+    {
+        // RFC 7235 §2.1 auth-schemes are case-insensitive. A client
+        // (or a well-meaning middleware) might normalise the scheme to
+        // lowercase, and we must still accept it.
+        $integration = $this->createIntegration(
+            providerKey: 'postmark',
+            providerClass: PostmarkProvider::class,
+            credentials: [
+                'server_token' => 'srv-abc',
+                'webhook_username' => 'hook-user',
+                'webhook_password' => 'hook-pass',
+            ],
+        );
+
+        $request = Request::create('/webhook', 'POST', content: '{}');
+        $request->headers->set('Authorization', 'basic '.base64_encode('hook-user:hook-pass'));
+
+        $this->assertTrue((new PostmarkProvider)->verifyWebhookSignature($integration, $request));
+    }
+
     public function test_webhook_signature_rejects_wrong_password(): void
     {
         $integration = $this->createIntegration(
@@ -530,7 +551,7 @@ class PostmarkProviderTest extends TestCase
     {
         Http::preventStrayRequests();
         Http::fake([
-            'api.postmarkapp.com/server' => Http::response(['ID' => 1, 'Name' => 'Test'], 200),
+            'https://api.postmarkapp.com/server' => Http::response(['ID' => 1, 'Name' => 'Test'], 200),
         ]);
 
         $integration = $this->makeIntegration();
@@ -542,7 +563,7 @@ class PostmarkProviderTest extends TestCase
     {
         Http::preventStrayRequests();
         Http::fake([
-            'api.postmarkapp.com/server' => Http::response(['Message' => 'Unauthorized'], 401),
+            'https://api.postmarkapp.com/server' => Http::response(['Message' => 'Unauthorized'], 401),
         ]);
 
         $integration = $this->makeIntegration();

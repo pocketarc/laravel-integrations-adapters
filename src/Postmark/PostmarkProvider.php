@@ -146,7 +146,14 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
         }
 
         $header = $request->header('Authorization');
-        if (! is_string($header) || ! str_starts_with($header, 'Basic ')) {
+        if (! is_string($header)) {
+            return false;
+        }
+
+        // RFC 7235 §2.1: auth-scheme tokens are case-insensitive, so `basic`,
+        // `Basic`, and `BASIC` all need to work. mb_stripos() gives us that
+        // with no allocation beyond the tiny comparison.
+        if (mb_stripos($header, 'Basic ') !== 0) {
             return false;
         }
 

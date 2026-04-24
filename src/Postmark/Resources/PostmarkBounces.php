@@ -35,11 +35,13 @@ class PostmarkBounces extends PostmarkResource
      */
     public function list(int $count = 100, int $offset = 0, array $filters = []): ?PostmarkBounceListResponse
     {
-        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters): ?PostmarkBounceListResponse {
+        $stream = $filters['messagestream'] ?? $this->client->defaultMessageStream();
+
+        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters, $stream): ?PostmarkBounceListResponse {
             $result = $this->integration
                 ->toAs('bounces', PostmarkBounceListResponse::class)
-                ->withData(array_merge(['count' => $count, 'offset' => $offset], $filters))
-                ->get(function () use ($count, $offset, $filters): array {
+                ->withData(array_merge(['count' => $count, 'offset' => $offset, 'messagestream' => $stream], $filters))
+                ->get(function () use ($count, $offset, $filters, $stream): array {
                     $list = $this->sdk()->getBounces(
                         count: $count,
                         offset: $offset,
@@ -50,7 +52,7 @@ class PostmarkBounces extends PostmarkResource
                         messageID: $filters['messageId'] ?? null,
                         fromdate: $filters['fromdate'] ?? null,
                         todate: $filters['todate'] ?? null,
-                        messagestream: $filters['messagestream'] ?? null,
+                        messagestream: $stream,
                     );
 
                     $bounces = [];

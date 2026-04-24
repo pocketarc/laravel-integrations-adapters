@@ -12,12 +12,15 @@ use Spatie\LaravelData\Data;
  * `Status` reflects whether Postmark accepted, blocked, or queued the
  * message; `MailboxHash` is the part of the recipient address after `+`,
  * useful for routing replies back to a thread/conversation.
+ *
+ * Postmark returns `To` and `Cc` as raw header strings on the inbound
+ * search endpoint (the parsed `ToFull`/`CcFull` arrays are only on the
+ * per-message details endpoint). We keep the two separate; consumers
+ * who need structured addresses fetch the details.
  */
 class PostmarkInboundMessageData extends Data
 {
     /**
-     * @param  array<int, mixed>|null  $To
-     * @param  array<int, mixed>|null  $Cc
      * @param  array<string, mixed>|null  $original
      */
     public function __construct(
@@ -29,8 +32,8 @@ class PostmarkInboundMessageData extends Data
         public readonly string $MailboxHash,
         public readonly ?string $FromName = null,
         public readonly ?string $Tag = null,
-        public readonly ?array $To = null,
-        public readonly ?array $Cc = null,
+        public readonly ?string $To = null,
+        public readonly ?string $Cc = null,
         public readonly ?array $original = null,
     ) {}
 
