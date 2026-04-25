@@ -15,7 +15,7 @@ class StripeEvents extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("events/{$id}")
+            ->at("events/{$id}")
             ->get(fn (): Event => $this->sdk()->events->retrieve($id));
 
         return $this->expectInstance($response, Event::class);
@@ -37,7 +37,7 @@ class StripeEvents extends StripeResource
         }
 
         $response = $this->integration
-            ->to('events')
+            ->at('events')
             ->withData($params)
             ->get(fn (): Collection => $this->sdk()->events->all($params));
 

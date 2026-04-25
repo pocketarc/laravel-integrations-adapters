@@ -27,9 +27,10 @@ class PostmarkSuppressions extends PostmarkResource
     {
         $stream = $messageStream ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($stream, $filters): ?PostmarkSuppressionListResponse {
-            $result = $this->integration
-                ->toAs("message-streams/{$stream}/suppressions/dump", PostmarkSuppressionListResponse::class)
+        return $this->executeWithErrorHandling(function () use ($stream, $filters): PostmarkSuppressionListResponse {
+            return $this->integration
+                ->at("message-streams/{$stream}/suppressions/dump")
+                ->as(PostmarkSuppressionListResponse::class)
                 ->withData($filters)
                 ->get(function () use ($stream, $filters): array {
                     $list = $this->sdk()->getSuppressions(
@@ -52,8 +53,6 @@ class PostmarkSuppressions extends PostmarkResource
                         'Suppressions' => $suppressions,
                     ];
                 });
-
-            return $result instanceof PostmarkSuppressionListResponse ? $result : null;
         });
     }
 
@@ -81,7 +80,7 @@ class PostmarkSuppressions extends PostmarkResource
             $changes = array_map(fn (string $email): SuppressionChangeRequest => new SuppressionChangeRequest($email), $emailAddresses);
 
             $response = $this->integration
-                ->to("message-streams/{$stream}/suppressions")
+                ->at("message-streams/{$stream}/suppressions")
                 ->withData(['Suppressions' => array_map(fn (string $email): array => ['EmailAddress' => $email], $emailAddresses)])
                 ->post(function () use ($changes, $stream): PostmarkSuppressionResultList {
                     return $this->sdk()->createSuppressions($changes, $stream);
@@ -114,7 +113,7 @@ class PostmarkSuppressions extends PostmarkResource
             $changes = array_map(fn (string $email): SuppressionChangeRequest => new SuppressionChangeRequest($email), $emailAddresses);
 
             $response = $this->integration
-                ->to("message-streams/{$stream}/suppressions/delete")
+                ->at("message-streams/{$stream}/suppressions/delete")
                 ->withData(['Suppressions' => array_map(fn (string $email): array => ['EmailAddress' => $email], $emailAddresses)])
                 ->post(function () use ($changes, $stream): PostmarkSuppressionResultList {
                     return $this->sdk()->deleteSuppressions($changes, $stream);

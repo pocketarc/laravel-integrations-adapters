@@ -22,9 +22,10 @@ class PostmarkServerStats extends PostmarkResource
         $this->assertYmdDate($fromDate, 'fromDate');
         $this->assertYmdDate($toDate, 'toDate');
 
-        return $this->executeWithErrorHandling(function () use ($fromDate, $toDate, $tag, $messageStream): ?PostmarkOutboundStatsData {
-            $result = $this->integration
-                ->toAs('stats/outbound', PostmarkOutboundStatsData::class)
+        return $this->executeWithErrorHandling(function () use ($fromDate, $toDate, $tag, $messageStream): PostmarkOutboundStatsData {
+            return $this->integration
+                ->at('stats/outbound')
+                ->as(PostmarkOutboundStatsData::class)
                 ->withData(array_filter([
                     'fromdate' => $fromDate,
                     'todate' => $toDate,
@@ -39,8 +40,6 @@ class PostmarkServerStats extends PostmarkResource
                         messagestream: $messageStream,
                     ));
                 });
-
-            return $result instanceof PostmarkOutboundStatsData ? $result : null;
         });
     }
 }

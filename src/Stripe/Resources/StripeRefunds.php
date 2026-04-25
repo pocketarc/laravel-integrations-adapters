@@ -58,7 +58,7 @@ class StripeRefunds extends StripeResource
         $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
-            ->to('refunds')
+            ->at('refunds')
             ->withData($params)
             ->post(fn (): Refund => $this->sdk()->refunds->create($params, ['idempotency_key' => $idempotencyKey]));
 
@@ -70,7 +70,7 @@ class StripeRefunds extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("refunds/{$id}")
+            ->at("refunds/{$id}")
             ->get(fn (): Refund => $this->sdk()->refunds->retrieve($id));
 
         return $this->expectInstance($response, Refund::class);
@@ -96,7 +96,7 @@ class StripeRefunds extends StripeResource
         }
 
         $response = $this->integration
-            ->to('refunds')
+            ->at('refunds')
             ->withData($params)
             ->get(fn (): Collection => $this->sdk()->refunds->all($params));
 

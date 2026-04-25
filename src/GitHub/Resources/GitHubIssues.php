@@ -32,7 +32,7 @@ class GitHubIssues extends GitHubResource
 
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues")
                 ->withData($params)
                 ->post(fn (): array => $this->getIssueApi()->create($this->owner(), $this->repo(), $params));
 
@@ -58,7 +58,7 @@ class GitHubIssues extends GitHubResource
     {
         /** @var array<string, mixed>|null */
         return $this->executeWithErrorHandling(fn () => $this->integration
-            ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
+            ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
             ->get(fn (): array => $this->getIssueApi()->show($this->owner(), $this->repo(), $issueNumber)));
     }
 
@@ -77,7 +77,7 @@ class GitHubIssues extends GitHubResource
 
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData($params)
                 ->patch(fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params));
 
@@ -90,7 +90,7 @@ class GitHubIssues extends GitHubResource
         return $this->executeWithErrorHandling(function () use ($issueNumber): GitHubIssueData {
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData(['state' => 'open'])
                 ->patch(fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open']));
 
@@ -113,7 +113,7 @@ class GitHubIssues extends GitHubResource
         do {
             /** @var list<array<string, mixed>> $issues */
             $issues = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues?page={$page}")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues?page={$page}")
                 ->withData(['since' => $since->format('c'), 'page' => $page])
                 ->get(fn (): array => $this->getIssueApi()
                     ->configure('full')
@@ -160,7 +160,7 @@ class GitHubIssues extends GitHubResource
 
         /** @var list<array<string, mixed>> $timeline */
         $timeline = $this->integration
-            ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
+            ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
             ->withData(['issue_number' => $issueNumber, 'page' => $page])
             ->get(fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner(), $this->repo(), $issueNumber]));
 
@@ -173,7 +173,7 @@ class GitHubIssues extends GitHubResource
 
             /** @var list<array<string, mixed>> $timeline */
             $timeline = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
                 ->get(fn (): array => $pager->fetchNext());
 

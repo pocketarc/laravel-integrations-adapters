@@ -25,7 +25,7 @@ class GitHubAssets extends GitHubResource
             ] : [];
 
             $result = $this->integration
-                ->to($url)
+                ->at($url)
                 ->get(fn () => Http::timeout(120)
                     ->withHeaders($headers)
                     ->throw()

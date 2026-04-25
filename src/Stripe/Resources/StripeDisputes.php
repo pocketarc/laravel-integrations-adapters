@@ -15,7 +15,7 @@ class StripeDisputes extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("disputes/{$id}")
+            ->at("disputes/{$id}")
             ->get(fn (): Dispute => $this->sdk()->disputes->retrieve($id));
 
         return $this->expectInstance($response, Dispute::class);
@@ -45,7 +45,7 @@ class StripeDisputes extends StripeResource
         }
 
         $response = $this->integration
-            ->to("disputes/{$id}")
+            ->at("disputes/{$id}")
             ->withData($params)
             ->post(fn (): Dispute => $this->sdk()->disputes->update($id, $params));
 
@@ -57,7 +57,7 @@ class StripeDisputes extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("disputes/{$id}/close")
+            ->at("disputes/{$id}/close")
             ->post(fn (): Dispute => $this->sdk()->disputes->close($id));
 
         return $this->expectInstance($response, Dispute::class);
@@ -83,7 +83,7 @@ class StripeDisputes extends StripeResource
         }
 
         $response = $this->integration
-            ->to('disputes')
+            ->at('disputes')
             ->withData($params)
             ->get(fn (): Collection => $this->sdk()->disputes->all($params));
 

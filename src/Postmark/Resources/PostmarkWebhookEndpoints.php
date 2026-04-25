@@ -30,26 +30,26 @@ class PostmarkWebhookEndpoints extends PostmarkResource
 {
     public function get(int $id): ?PostmarkWebhookEndpointData
     {
-        return $this->executeWithErrorHandling(function () use ($id): ?PostmarkWebhookEndpointData {
-            $result = $this->integration
-                ->toAs("webhooks/{$id}", PostmarkWebhookEndpointData::class)
+        return $this->executeWithErrorHandling(function () use ($id): PostmarkWebhookEndpointData {
+            return $this->integration
+                ->at("webhooks/{$id}")
+                ->as(PostmarkWebhookEndpointData::class)
                 ->get(function () use ($id): array {
                     $config = $this->sdk()->getWebhookConfiguration($id);
 
                     return $this->configToArray($config);
                 });
-
-            return $result instanceof PostmarkWebhookEndpointData ? $result : null;
         });
     }
 
     public function list(?string $messageStream = null): ?PostmarkWebhookEndpointListResponse
     {
-        return $this->executeWithErrorHandling(function () use ($messageStream): ?PostmarkWebhookEndpointListResponse {
+        return $this->executeWithErrorHandling(function () use ($messageStream): PostmarkWebhookEndpointListResponse {
             $endpoint = 'webhooks'.($messageStream !== null ? "?MessageStream={$messageStream}" : '');
 
-            $result = $this->integration
-                ->toAs($endpoint, PostmarkWebhookEndpointListResponse::class)
+            return $this->integration
+                ->at($endpoint)
+                ->as(PostmarkWebhookEndpointListResponse::class)
                 ->withData(['MessageStream' => $messageStream])
                 ->get(function () use ($messageStream): array {
                     $token = $this->serverToken();
@@ -68,8 +68,6 @@ class PostmarkWebhookEndpoints extends PostmarkResource
 
                     return is_array($body) ? $body : [];
                 });
-
-            return $result instanceof PostmarkWebhookEndpointListResponse ? $result : null;
         });
     }
 
@@ -77,7 +75,7 @@ class PostmarkWebhookEndpoints extends PostmarkResource
     {
         return $this->executeWithErrorHandling(function () use ($id): bool {
             $this->integration
-                ->to("webhooks/{$id}")
+                ->at("webhooks/{$id}")
                 ->delete(function () use ($id): bool {
                     $this->sdk()->deleteWebhookConfiguration($id);
 
@@ -97,7 +95,7 @@ class PostmarkWebhookEndpoints extends PostmarkResource
     {
         $stream = $messageStream ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($url, $stream, $httpAuth, $httpHeaders, $triggers): ?PostmarkWebhookEndpointData {
+        return $this->executeWithErrorHandling(function () use ($url, $stream, $httpAuth, $httpHeaders, $triggers): PostmarkWebhookEndpointData {
             $payload = array_filter([
                 'Url' => $url,
                 'MessageStream' => $stream,
@@ -106,8 +104,9 @@ class PostmarkWebhookEndpoints extends PostmarkResource
                 'Triggers' => $triggers,
             ], static fn (mixed $value): bool => $value !== null);
 
-            $result = $this->integration
-                ->toAs('webhooks', PostmarkWebhookEndpointData::class)
+            return $this->integration
+                ->at('webhooks')
+                ->as(PostmarkWebhookEndpointData::class)
                 ->withData($payload)
                 ->post(function () use ($payload): array {
                     $body = Http::withHeaders([
@@ -123,8 +122,6 @@ class PostmarkWebhookEndpoints extends PostmarkResource
 
                     return is_array($body) ? $body : [];
                 });
-
-            return $result instanceof PostmarkWebhookEndpointData ? $result : null;
         });
     }
 

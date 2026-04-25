@@ -21,7 +21,7 @@ class ZendeskAttachments extends ZendeskResource
             self::assertUrlNotPrivate($url);
 
             $result = $this->integration
-                ->to($url)
+                ->at($url)
                 ->get(function () use ($url): string {
                     return Http::timeout(120)->get($url)->throw()->body();
                 });
@@ -41,13 +41,10 @@ class ZendeskAttachments extends ZendeskResource
 
             do {
                 $response = $this->integration
-                    ->toAs("tickets/{$ticketId}/comments.json", ZendeskCommentPageResponse::class)
+                    ->at("tickets/{$ticketId}/comments.json")
+                    ->as(ZendeskCommentPageResponse::class)
                     ->withData($params)
                     ->get(fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params));
-
-                if (! $response instanceof ZendeskCommentPageResponse) {
-                    return null;
-                }
 
                 $url = $this->findAttachmentContentUrl($response->comments, $attachmentId);
                 if ($url !== null) {
