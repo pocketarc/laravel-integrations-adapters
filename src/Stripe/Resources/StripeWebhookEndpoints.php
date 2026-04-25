@@ -32,7 +32,7 @@ class StripeWebhookEndpoints extends StripeResource
         }
 
         $response = $this->integration
-            ->to('webhook_endpoints')
+            ->at('webhook_endpoints')
             ->withData($params)
             ->post(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->create($params));
 
@@ -44,7 +44,7 @@ class StripeWebhookEndpoints extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("webhook_endpoints/{$id}")
+            ->at("webhook_endpoints/{$id}")
             ->get(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->retrieve($id));
 
         return $this->expectInstance($response, WebhookEndpoint::class);
@@ -82,7 +82,7 @@ class StripeWebhookEndpoints extends StripeResource
         }
 
         $response = $this->integration
-            ->to("webhook_endpoints/{$id}")
+            ->at("webhook_endpoints/{$id}")
             ->withData($params)
             ->post(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->update($id, $params));
 
@@ -94,7 +94,7 @@ class StripeWebhookEndpoints extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("webhook_endpoints/{$id}")
+            ->at("webhook_endpoints/{$id}")
             ->delete(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->delete($id));
 
         return $this->expectInstance($response, WebhookEndpoint::class);
@@ -112,7 +112,7 @@ class StripeWebhookEndpoints extends StripeResource
         }
 
         $response = $this->integration
-            ->to('webhook_endpoints')
+            ->at('webhook_endpoints')
             ->withData($params)
             ->get(fn (): Collection => $this->sdk()->webhookEndpoints->all($params));
 

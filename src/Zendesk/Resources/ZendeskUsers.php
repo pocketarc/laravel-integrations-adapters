@@ -13,17 +13,16 @@ class ZendeskUsers extends ZendeskResource
 {
     public function get(int $userId): ?ZendeskUserData
     {
-        return $this->executeWithErrorHandling(function () use ($userId): ?ZendeskUserData {
-            $result = $this->integration
-                ->toAs("users/{$userId}.json", ZendeskUserData::class)
+        return $this->executeWithErrorHandling(function () use ($userId): ZendeskUserData {
+            return $this->integration
+                ->at("users/{$userId}.json")
+                ->as(ZendeskUserData::class)
                 ->get(function () use ($userId): ?stdClass {
                     $response = $this->sdk()->users()->find($userId);
                     $user = $response->user ?? null;
 
                     return $user instanceof stdClass ? $user : null;
                 });
-
-            return $result instanceof ZendeskUserData ? $result : null;
         });
     }
 
@@ -43,7 +42,7 @@ class ZendeskUsers extends ZendeskResource
 
         $this->executeWithErrorHandling(function () use ($callback, &$users): void {
             $this->integration
-                ->to('users.json')
+                ->at('users.json')
                 ->get(function () use ($callback, &$users): void {
                     $iterator = $this->sdk()->users()->iterator();
 

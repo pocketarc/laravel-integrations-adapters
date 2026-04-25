@@ -26,9 +26,10 @@ class PostmarkMessages extends PostmarkResource
     {
         $stream = $filters['messagestream'] ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters, $stream): ?PostmarkOutboundMessageListResponse {
-            $result = $this->integration
-                ->toAs('messages/outbound', PostmarkOutboundMessageListResponse::class)
+        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters, $stream): PostmarkOutboundMessageListResponse {
+            return $this->integration
+                ->at('messages/outbound')
+                ->as(PostmarkOutboundMessageListResponse::class)
                 ->withData(array_merge(['count' => $count, 'offset' => $offset, 'messagestream' => $stream], $filters))
                 ->get(function () use ($count, $offset, $filters, $stream): array {
                     $list = $this->sdk()->getOutboundMessages(
@@ -57,21 +58,18 @@ class PostmarkMessages extends PostmarkResource
                         'Messages' => $messages,
                     ];
                 });
-
-            return $result instanceof PostmarkOutboundMessageListResponse ? $result : null;
         });
     }
 
     public function getOutbound(string $messageId): ?PostmarkOutboundMessageData
     {
-        return $this->executeWithErrorHandling(function () use ($messageId): ?PostmarkOutboundMessageData {
-            $result = $this->integration
-                ->toAs("messages/outbound/{$messageId}/details", PostmarkOutboundMessageData::class)
+        return $this->executeWithErrorHandling(function () use ($messageId): PostmarkOutboundMessageData {
+            return $this->integration
+                ->at("messages/outbound/{$messageId}/details")
+                ->as(PostmarkOutboundMessageData::class)
                 ->get(function () use ($messageId): array {
                     return get_object_vars($this->sdk()->getOutboundMessageDetails($messageId));
                 });
-
-            return $result instanceof PostmarkOutboundMessageData ? $result : null;
         });
     }
 
@@ -80,9 +78,10 @@ class PostmarkMessages extends PostmarkResource
      */
     public function listInbound(int $count = 100, int $offset = 0, array $filters = []): ?PostmarkInboundMessageListResponse
     {
-        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters): ?PostmarkInboundMessageListResponse {
-            $result = $this->integration
-                ->toAs('messages/inbound', PostmarkInboundMessageListResponse::class)
+        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters): PostmarkInboundMessageListResponse {
+            return $this->integration
+                ->at('messages/inbound')
+                ->as(PostmarkInboundMessageListResponse::class)
                 ->withData(array_merge(['count' => $count, 'offset' => $offset], $filters))
                 ->get(function () use ($count, $offset, $filters): array {
                     $list = $this->sdk()->getInboundMessages(
@@ -110,21 +109,18 @@ class PostmarkMessages extends PostmarkResource
                         'InboundMessages' => $messages,
                     ];
                 });
-
-            return $result instanceof PostmarkInboundMessageListResponse ? $result : null;
         });
     }
 
     public function getInbound(string $messageId): ?PostmarkInboundMessageData
     {
-        return $this->executeWithErrorHandling(function () use ($messageId): ?PostmarkInboundMessageData {
-            $result = $this->integration
-                ->toAs("messages/inbound/{$messageId}/details", PostmarkInboundMessageData::class)
+        return $this->executeWithErrorHandling(function () use ($messageId): PostmarkInboundMessageData {
+            return $this->integration
+                ->at("messages/inbound/{$messageId}/details")
+                ->as(PostmarkInboundMessageData::class)
                 ->get(function () use ($messageId): array {
                     return get_object_vars($this->sdk()->getInboundMessageDetails($messageId));
                 });
-
-            return $result instanceof PostmarkInboundMessageData ? $result : null;
         });
     }
 }

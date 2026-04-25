@@ -15,7 +15,7 @@ class StripeCharges extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("charges/{$id}")
+            ->at("charges/{$id}")
             ->get(fn (): Charge => $this->sdk()->charges->retrieve($id));
 
         return $this->expectInstance($response, Charge::class);
@@ -41,7 +41,7 @@ class StripeCharges extends StripeResource
         $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
 
         $response = $this->integration
-            ->to("charges/{$id}/capture")
+            ->at("charges/{$id}/capture")
             ->withData($params)
             ->post(fn (): Charge => $this->sdk()->charges->capture($id, $params, ['idempotency_key' => $idempotencyKey]));
 
@@ -68,7 +68,7 @@ class StripeCharges extends StripeResource
         }
 
         $response = $this->integration
-            ->to('charges')
+            ->at('charges')
             ->withData($params)
             ->get(fn (): Collection => $this->sdk()->charges->all($params));
 

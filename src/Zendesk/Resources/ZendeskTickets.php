@@ -18,25 +18,25 @@ class ZendeskTickets extends ZendeskResource
 {
     public function get(int $ticketId): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $result = $this->integration
-                ->toAs("tickets/{$ticketId}.json", ZendeskTicketData::class)
+        return $this->executeWithErrorHandling(function () use ($ticketId): ZendeskTicketData {
+            return $this->integration
+                ->at("tickets/{$ticketId}.json")
+                ->as(ZendeskTicketData::class)
                 ->get(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->find($ticketId);
                     $ticket = $response->ticket ?? null;
 
                     return $ticket instanceof stdClass ? $ticket : null;
                 });
-
-            return $result instanceof ZendeskTicketData ? $result : null;
         });
     }
 
     public function close(int $ticketId): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $result = $this->integration
-                ->toAs("tickets/{$ticketId}.json", ZendeskTicketData::class)
+        return $this->executeWithErrorHandling(function () use ($ticketId): ZendeskTicketData {
+            return $this->integration
+                ->at("tickets/{$ticketId}.json")
+                ->as(ZendeskTicketData::class)
                 ->withData(['status' => ZendeskStatus::Solved->value])
                 ->put(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
@@ -44,16 +44,15 @@ class ZendeskTickets extends ZendeskResource
 
                     return $ticket instanceof stdClass ? $ticket : null;
                 });
-
-            return $result instanceof ZendeskTicketData ? $result : null;
         });
     }
 
     public function reopen(int $ticketId): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): ?ZendeskTicketData {
-            $result = $this->integration
-                ->toAs("tickets/{$ticketId}.json", ZendeskTicketData::class)
+        return $this->executeWithErrorHandling(function () use ($ticketId): ZendeskTicketData {
+            return $this->integration
+                ->at("tickets/{$ticketId}.json")
+                ->as(ZendeskTicketData::class)
                 ->withData(['status' => ZendeskStatus::Open->value])
                 ->put(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
@@ -61,8 +60,6 @@ class ZendeskTickets extends ZendeskResource
 
                     return $ticket instanceof stdClass ? $ticket : null;
                 });
-
-            return $result instanceof ZendeskTicketData ? $result : null;
         });
     }
 
@@ -76,7 +73,7 @@ class ZendeskTickets extends ZendeskResource
     public function list(callable $callback): void
     {
         $this->integration
-            ->to('tickets.json')
+            ->at('tickets.json')
             ->get(function () use ($callback): void {
                 $iterator = $this->sdk()->tickets()->iterator();
 
@@ -106,7 +103,8 @@ class ZendeskTickets extends ZendeskResource
                 $this->sdk()->setApiBasePath('api/v2/');
 
                 $response = $this->integration
-                    ->toAs("incremental/tickets.json?start_time={$timestamp}", ZendeskIncrementalTicketResponse::class)
+                    ->at("incremental/tickets.json?start_time={$timestamp}")
+                    ->as(ZendeskIncrementalTicketResponse::class)
                     ->withData(['start_time' => $timestamp])
                     ->get(fn () => Http::send(
                         $this->sdk(),
@@ -119,7 +117,7 @@ class ZendeskTickets extends ZendeskResource
                         ]
                     ));
 
-                if (! $response instanceof ZendeskIncrementalTicketResponse || $response->tickets->isEmpty()) {
+                if ($response->tickets->isEmpty()) {
                     break;
                 }
 
@@ -156,7 +154,8 @@ class ZendeskTickets extends ZendeskResource
                 $this->sdk()->setApiBasePath('api/v2/');
 
                 $response = $this->integration
-                    ->toAs("search.json?page={$page}", ZendeskSearchResponse::class)
+                    ->at("search.json?page={$page}")
+                    ->as(ZendeskSearchResponse::class)
                     ->withData(['min_id' => $minId, 'page' => $page])
                     ->get(fn () => Http::send(
                         $this->sdk(),
@@ -171,10 +170,6 @@ class ZendeskTickets extends ZendeskResource
                             ],
                         ]
                     ));
-
-                if (! $response instanceof ZendeskSearchResponse) {
-                    break;
-                }
 
                 $users = $response->users->keyBy('id');
 

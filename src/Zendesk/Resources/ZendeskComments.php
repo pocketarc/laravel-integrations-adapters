@@ -32,13 +32,10 @@ class ZendeskComments extends ZendeskResource
 
         do {
             $response = $this->integration
-                ->toAs("tickets/{$ticketId}/comments.json", ZendeskCommentPageResponse::class)
+                ->at("tickets/{$ticketId}/comments.json")
+                ->as(ZendeskCommentPageResponse::class)
                 ->withData($params)
                 ->get(fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params));
-
-            if (! $response instanceof ZendeskCommentPageResponse) {
-                return;
-            }
 
             foreach ($response->comments as $comment) {
                 $callback($comment);
@@ -92,7 +89,8 @@ class ZendeskComments extends ZendeskResource
                 $this->sdk()->setApiBasePath('api/v2/');
 
                 $response = $this->integration
-                    ->toAs("search.json?page={$page}", ZendeskSearchResponse::class)
+                    ->at("search.json?page={$page}")
+                    ->as(ZendeskSearchResponse::class)
                     ->withData(['query' => "type:ticket updated>{$cutoff}", 'page' => $page])
                     ->get(fn () => Http::send(
                         $this->sdk(),
@@ -107,7 +105,7 @@ class ZendeskComments extends ZendeskResource
                         ]
                     ));
 
-                if (! $response instanceof ZendeskSearchResponse || $response->results->isEmpty()) {
+                if ($response->results->isEmpty()) {
                     break;
                 }
 
@@ -129,7 +127,7 @@ class ZendeskComments extends ZendeskResource
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?ZendeskCommentData {
             $result = $this->integration
-                ->to("tickets/{$ticketId}.json")
+                ->at("tickets/{$ticketId}.json")
                 ->withData(['comment' => $comment])
                 ->put(function () use ($ticketId, $comment): ?ZendeskCommentData {
                     $response = $this->sdk()->tickets()->update($ticketId, [
@@ -150,7 +148,7 @@ class ZendeskComments extends ZendeskResource
     {
         return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?ZendeskCommentData {
             $result = $this->integration
-                ->to("tickets/{$ticketId}.json")
+                ->at("tickets/{$ticketId}.json")
                 ->withData(['note' => $note])
                 ->put(function () use ($ticketId, $note): ?ZendeskCommentData {
                     $response = $this->sdk()->tickets()->update($ticketId, [

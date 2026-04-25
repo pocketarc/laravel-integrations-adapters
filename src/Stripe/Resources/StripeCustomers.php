@@ -38,7 +38,7 @@ class StripeCustomers extends StripeResource
         }
 
         $response = $this->integration
-            ->to('customers')
+            ->at('customers')
             ->withData($params)
             ->post(fn (): Customer => $this->sdk()->customers->create($params));
 
@@ -50,7 +50,7 @@ class StripeCustomers extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("customers/{$id}")
+            ->at("customers/{$id}")
             ->get(fn (): Customer => $this->sdk()->customers->retrieve($id));
 
         return $this->expectInstance($response, Customer::class);
@@ -87,7 +87,7 @@ class StripeCustomers extends StripeResource
         }
 
         $response = $this->integration
-            ->to("customers/{$id}")
+            ->at("customers/{$id}")
             ->withData($params)
             ->post(fn (): Customer => $this->sdk()->customers->update($id, $params));
 
@@ -99,7 +99,7 @@ class StripeCustomers extends StripeResource
         $this->assertId($id);
 
         $response = $this->integration
-            ->to("customers/{$id}")
+            ->at("customers/{$id}")
             ->delete(fn (): Customer => $this->sdk()->customers->delete($id));
 
         return $this->expectInstance($response, Customer::class);
@@ -120,7 +120,7 @@ class StripeCustomers extends StripeResource
         }
 
         $response = $this->integration
-            ->to('customers')
+            ->at('customers')
             ->withData($params)
             ->get(fn (): Collection => $this->sdk()->customers->all($params));
 

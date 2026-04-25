@@ -19,14 +19,13 @@ class PostmarkBounces extends PostmarkResource
 {
     public function get(int $bounceId): ?PostmarkBounceData
     {
-        return $this->executeWithErrorHandling(function () use ($bounceId): ?PostmarkBounceData {
-            $result = $this->integration
-                ->toAs("bounces/{$bounceId}", PostmarkBounceData::class)
+        return $this->executeWithErrorHandling(function () use ($bounceId): PostmarkBounceData {
+            return $this->integration
+                ->at("bounces/{$bounceId}")
+                ->as(PostmarkBounceData::class)
                 ->get(function () use ($bounceId): array {
                     return get_object_vars($this->sdk()->getBounce($bounceId));
                 });
-
-            return $result instanceof PostmarkBounceData ? $result : null;
         });
     }
 
@@ -37,9 +36,10 @@ class PostmarkBounces extends PostmarkResource
     {
         $stream = $filters['messagestream'] ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters, $stream): ?PostmarkBounceListResponse {
-            $result = $this->integration
-                ->toAs('bounces', PostmarkBounceListResponse::class)
+        return $this->executeWithErrorHandling(function () use ($count, $offset, $filters, $stream): PostmarkBounceListResponse {
+            return $this->integration
+                ->at('bounces')
+                ->as(PostmarkBounceListResponse::class)
                 ->withData(array_merge(['count' => $count, 'offset' => $offset, 'messagestream' => $stream], $filters))
                 ->get(function () use ($count, $offset, $filters, $stream): array {
                     $list = $this->sdk()->getBounces(
@@ -67,8 +67,6 @@ class PostmarkBounces extends PostmarkResource
                         'Bounces' => $bounces,
                     ];
                 });
-
-            return $result instanceof PostmarkBounceListResponse ? $result : null;
         });
     }
 
@@ -82,7 +80,7 @@ class PostmarkBounces extends PostmarkResource
     {
         return $this->executeWithErrorHandling(function () use ($bounceId): bool {
             $this->integration
-                ->to("bounces/{$bounceId}/activate")
+                ->at("bounces/{$bounceId}/activate")
                 ->put(function () use ($bounceId): bool {
                     $this->sdk()->activateBounce($bounceId);
 
@@ -103,7 +101,7 @@ class PostmarkBounces extends PostmarkResource
     {
         return $this->executeWithErrorHandling(function () use ($bounceId): ?string {
             $result = $this->integration
-                ->to("bounces/{$bounceId}/dump")
+                ->at("bounces/{$bounceId}/dump")
                 ->get(function () use ($bounceId): ?string {
                     $dump = $this->sdk()->getBounceDump($bounceId);
                     $body = $dump->Body ?? null;

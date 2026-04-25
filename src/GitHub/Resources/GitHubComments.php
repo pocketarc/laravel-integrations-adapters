@@ -24,7 +24,7 @@ class GitHubComments extends GitHubResource
         do {
             /** @var list<array<string, mixed>> $comments */
             $comments = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments?page={$page}")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
                 ->get(fn (): array => $this->getIssueApi()->comments()
                     ->configure('full')
@@ -55,7 +55,7 @@ class GitHubComments extends GitHubResource
         return $this->executeWithErrorHandling(function () use ($issueNumber, $comment): GitHubCommentData {
             /** @var array<string, mixed> $response */
             $response = $this->integration
-                ->to("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments")
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments")
                 ->withData(['body' => $comment])
                 ->post(fn (): array => $this->getIssueApi()->comments()->create($this->owner(), $this->repo(), $issueNumber, ['body' => $comment]));
 
