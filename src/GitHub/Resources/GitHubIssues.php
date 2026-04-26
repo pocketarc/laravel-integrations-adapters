@@ -19,8 +19,8 @@ class GitHubIssues extends GitHubResource
      *
      * The optional `$idempotencyKey` is persisted on
      * `integration_requests.idempotency_key` for searchability and our-side
-     * dedup downstream, but GitHub itself doesn't natively dedupe by it —
-     * core logs a warning when one is set against a non-`SupportsIdempotency`
+     * dedup downstream, but GitHub itself doesn't natively dedupe by it.
+     * Core logs a warning when one is set against a non-`SupportsIdempotency`
      * provider.
      *
      * @param  array<string>  $labels

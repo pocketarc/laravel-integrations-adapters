@@ -60,7 +60,7 @@ class PostmarkSuppressions extends PostmarkResource
      * Suppress one or more recipients on a stream. Returns true only if
      * Postmark accepts every address. The Suppressions API returns a
      * per-recipient `Status`, so a 200 from the transport layer does not
-     * by itself mean every address landed — an address with a malformed
+     * by itself mean every address landed: an address with a malformed
      * format or Admin-origin override comes back with Status="Failed"
      * alongside a reason in `Message`. We treat any non-Suppressed entry
      * as a failure for the whole batch and return false; the details end

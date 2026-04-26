@@ -121,7 +121,7 @@ class StripeProviderTest extends TestCase
 
     public function test_webhook_signature_rejects_when_credentials_are_missing(): void
     {
-        // Bypass CreatesIntegration to produce a row with null credentials —
+        // Bypass CreatesIntegration to produce a row with null credentials:
         // the happy-path helper types them and refuses null by design.
         $integration = Integration::create(['provider' => 'stripe', 'name' => 'Stripe']);
 

@@ -21,7 +21,7 @@ use function Safe\json_decode;
  * Stripe integration provider. Handles credential typing, webhook signature
  * verification, health checks, and a generic event pipeline that dispatches
  * `StripeWebhookReceived` for every verified delivery. Consumers listen for
- * that event and route by type to their own Actions — this adapter stays
+ * that event and route by type to their own Actions; this adapter stays
  * free of domain-specific routing.
  *
  * For making API calls, resolve a `StripeClient` for the Integration and use

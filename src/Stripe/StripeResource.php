@@ -48,7 +48,7 @@ abstract class StripeResource
     /**
      * Pull what we can from Stripe's last response (request ID, rate-limit
      * info when present) and feed it back to core via the RequestContext.
-     * Stripe sets `Request-Id` on every response — that's the value support
+     * Stripe sets `Request-Id` on every response, which is the value support
      * tickets ask for. Rate-limit headers are only emitted on 429s, so most
      * calls report just the request ID.
      *

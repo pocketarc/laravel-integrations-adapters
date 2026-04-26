@@ -55,7 +55,7 @@ abstract class GitHubResource
      * Pull what we can out of GitHub's last response (the request ID, plus
      * the rate-limit header set when present) and feed it back to core via
      * the RequestContext. GitHub doesn't have native idempotency dedup, but
-     * it's chatty about rate limits — and `X-GitHub-Request-Id` is what
+     * it's chatty about rate limits, and `X-GitHub-Request-Id` is what
      * GitHub's support team asks for first.
      *
      * Adapter resource methods should call this right after the SDK call
