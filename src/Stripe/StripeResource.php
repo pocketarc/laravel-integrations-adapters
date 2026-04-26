@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe;
 
-use Illuminate\Support\Str;
 use Integrations\Models\Integration;
+use Integrations\RequestContext;
 use InvalidArgumentException;
 use Stripe\StripeClient as StripeSdkClient;
+use Stripe\Util\CaseInsensitiveArray;
 use UnexpectedValueException;
 
 abstract class StripeResource
@@ -45,21 +46,45 @@ abstract class StripeResource
     }
 
     /**
-     * Null returns a fresh UUID so core retries inside one call stay idempotent.
-     * A blank string is rejected rather than forwarded, since it silently turns
-     * off Stripe's duplicate protection.
+     * Pull what we can from Stripe's last response (request ID, rate-limit
+     * info when present) and feed it back to core via the RequestContext.
+     * Stripe sets `Request-Id` on every response — that's the value support
+     * tickets ask for. Rate-limit headers are only emitted on 429s, so most
+     * calls report just the request ID.
+     *
+     * Adapter resource methods should call this right after the SDK call
+     * returns inside the closure passed to `Integration::request()`.
      */
-    protected function resolveIdempotencyKey(?string $key): string
+    protected function reportStripeMetadata(RequestContext $ctx): void
     {
-        if ($key === null) {
-            return Str::uuid()->toString();
+        $last = $this->sdk()->getLastResponse();
+        if ($last === null) {
+            return;
         }
 
-        if ($key === '') {
-            throw new InvalidArgumentException('idempotencyKey must not be empty when provided.');
+        $headers = $last->headers;
+
+        $ctx->reportResponseMetadata(
+            providerRequestId: $this->stringHeader($headers, 'Request-Id'),
+        );
+    }
+
+    /**
+     * Stripe's CaseInsensitiveArray supports normal array access by any
+     * casing, but we still need a defensive cast to string so PHPStan can
+     * see a non-mixed return.
+     *
+     * @param  CaseInsensitiveArray<string, mixed>|array<string, mixed>  $headers
+     */
+    private function stringHeader(mixed $headers, string $name): ?string
+    {
+        if (! is_array($headers) && ! ($headers instanceof \ArrayAccess)) {
+            return null;
         }
 
-        return $key;
+        $value = $headers[$name] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

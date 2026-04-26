@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use Stripe\Collection;
 use Stripe\Event;
 
@@ -16,7 +17,12 @@ class StripeEvents extends StripeResource
 
         $response = $this->integration
             ->at("events/{$id}")
-            ->get(fn (): Event => $this->sdk()->events->retrieve($id));
+            ->get(function (RequestContext $ctx) use ($id): Event {
+                $event = $this->sdk()->events->retrieve($id);
+                $this->reportStripeMetadata($ctx);
+
+                return $event;
+            });
 
         return $this->expectInstance($response, Event::class);
     }
@@ -39,7 +45,12 @@ class StripeEvents extends StripeResource
         $response = $this->integration
             ->at('events')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->events->all($params));
+            ->get(function (RequestContext $ctx) use ($params): Collection {
+                $list = $this->sdk()->events->all($params);
+                $this->reportStripeMetadata($ctx);
+
+                return $list;
+            });
 
         return $this->expectInstance($response, Collection::class);
     }

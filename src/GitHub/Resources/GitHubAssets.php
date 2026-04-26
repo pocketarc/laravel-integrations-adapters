@@ -7,6 +7,7 @@ namespace Integrations\Adapters\GitHub\Resources;
 use Illuminate\Support\Facades\Http;
 use Integrations\Adapters\Concerns\ValidatesUrls;
 use Integrations\Adapters\GitHub\GitHubResource;
+use Integrations\RequestContext;
 
 use function Safe\parse_url;
 
@@ -26,11 +27,19 @@ class GitHubAssets extends GitHubResource
 
             $result = $this->integration
                 ->at($url)
-                ->get(fn () => Http::timeout(120)
-                    ->withHeaders($headers)
-                    ->throw()
-                    ->get($url)
-                    ->body());
+                ->get(function (RequestContext $ctx) use ($url, $headers): string {
+                    $response = Http::timeout(120)
+                        ->withHeaders($headers)
+                        ->throw()
+                        ->get($url);
+
+                    $requestId = $response->header('X-GitHub-Request-Id');
+                    if ($requestId !== '') {
+                        $ctx->reportResponseMetadata(providerRequestId: $requestId);
+                    }
+
+                    return $response->body();
+                });
 
             return is_string($result) ? $result : null;
         });

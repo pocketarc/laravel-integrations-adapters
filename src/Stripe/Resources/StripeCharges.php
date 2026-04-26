@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use Stripe\Charge;
 use Stripe\Collection;
 
@@ -16,7 +17,12 @@ class StripeCharges extends StripeResource
 
         $response = $this->integration
             ->at("charges/{$id}")
-            ->get(fn (): Charge => $this->sdk()->charges->retrieve($id));
+            ->get(function (RequestContext $ctx) use ($id): Charge {
+                $charge = $this->sdk()->charges->retrieve($id);
+                $this->reportStripeMetadata($ctx);
+
+                return $charge;
+            });
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -38,12 +44,20 @@ class StripeCharges extends StripeResource
             $params['receipt_email'] = $receiptEmail;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at("charges/{$id}/capture")
             ->withData($params)
-            ->post(fn (): Charge => $this->sdk()->charges->capture($id, $params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(function (RequestContext $ctx) use ($id, $params): Charge {
+                $charge = $this->sdk()->charges->capture(
+                    $id,
+                    $params,
+                    ['idempotency_key' => $ctx->idempotencyKey],
+                );
+                $this->reportStripeMetadata($ctx);
+
+                return $charge;
+            });
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -70,7 +84,12 @@ class StripeCharges extends StripeResource
         $response = $this->integration
             ->at('charges')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->charges->all($params));
+            ->get(function (RequestContext $ctx) use ($params): Collection {
+                $list = $this->sdk()->charges->all($params);
+                $this->reportStripeMetadata($ctx);
+
+                return $list;
+            });
 
         return $this->expectInstance($response, Collection::class);
     }

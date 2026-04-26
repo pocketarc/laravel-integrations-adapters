@@ -9,6 +9,7 @@ use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\SupportsIdempotency;
 use Integrations\Models\Integration;
 use Safe\Exceptions\JsonException;
 use Stripe\Exception\SignatureVerificationException;
@@ -27,7 +28,7 @@ use function Safe\json_decode;
  * its resource accessors (`->paymentIntents()`, `->refunds()`, etc.) rather
  * than reaching into `\Stripe\*` types.
  */
-class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider
+class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider, SupportsIdempotency
 {
     #[\Override]
     public function name(): string

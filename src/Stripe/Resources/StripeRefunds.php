@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use InvalidArgumentException;
 use Stripe\Collection;
 use Stripe\Refund;
@@ -55,12 +56,19 @@ class StripeRefunds extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at('refunds')
             ->withData($params)
-            ->post(fn (): Refund => $this->sdk()->refunds->create($params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(function (RequestContext $ctx) use ($params): Refund {
+                $refund = $this->sdk()->refunds->create(
+                    $params,
+                    ['idempotency_key' => $ctx->idempotencyKey],
+                );
+                $this->reportStripeMetadata($ctx);
+
+                return $refund;
+            });
 
         return $this->expectInstance($response, Refund::class);
     }
@@ -71,7 +79,12 @@ class StripeRefunds extends StripeResource
 
         $response = $this->integration
             ->at("refunds/{$id}")
-            ->get(fn (): Refund => $this->sdk()->refunds->retrieve($id));
+            ->get(function (RequestContext $ctx) use ($id): Refund {
+                $refund = $this->sdk()->refunds->retrieve($id);
+                $this->reportStripeMetadata($ctx);
+
+                return $refund;
+            });
 
         return $this->expectInstance($response, Refund::class);
     }
@@ -98,7 +111,12 @@ class StripeRefunds extends StripeResource
         $response = $this->integration
             ->at('refunds')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->refunds->all($params));
+            ->get(function (RequestContext $ctx) use ($params): Collection {
+                $list = $this->sdk()->refunds->all($params);
+                $this->reportStripeMetadata($ctx);
+
+                return $list;
+            });
 
         return $this->expectInstance($response, Collection::class);
     }
