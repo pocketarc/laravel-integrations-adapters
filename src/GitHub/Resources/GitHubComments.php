@@ -6,6 +6,7 @@ namespace Integrations\Adapters\GitHub\Resources;
 
 use Integrations\Adapters\GitHub\Data\GitHubCommentData;
 use Integrations\Adapters\GitHub\GitHubResource;
+use Integrations\RequestContext;
 
 class GitHubComments extends GitHubResource
 {
@@ -26,17 +27,22 @@ class GitHubComments extends GitHubResource
             $comments = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                ->get(fn (): array => $this->getIssueApi()->comments()
-                    ->configure('full')
-                    ->all(
-                        $this->owner(),
-                        $this->repo(),
-                        $issueNumber,
-                        [
-                            'per_page' => $perPage,
-                            'page' => $page,
-                        ]
-                    ));
+                ->get(function (RequestContext $ctx) use ($issueNumber, $perPage, $page): array {
+                    $result = $this->getIssueApi()->comments()
+                        ->configure('full')
+                        ->all(
+                            $this->owner(),
+                            $this->repo(),
+                            $issueNumber,
+                            [
+                                'per_page' => $perPage,
+                                'page' => $page,
+                            ]
+                        );
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $result;
+                });
 
             if ($comments === []) {
                 break;
@@ -50,14 +56,20 @@ class GitHubComments extends GitHubResource
         } while (count($comments) === $perPage);
     }
 
-    public function add(int $issueNumber, string $comment): ?GitHubCommentData
+    public function add(int $issueNumber, string $comment, ?string $idempotencyKey = null): ?GitHubCommentData
     {
-        return $this->executeWithErrorHandling(function () use ($issueNumber, $comment): GitHubCommentData {
+        return $this->executeWithErrorHandling(function () use ($issueNumber, $comment, $idempotencyKey): GitHubCommentData {
             /** @var array<string, mixed> $response */
             $response = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/comments")
                 ->withData(['body' => $comment])
-                ->post(fn (): array => $this->getIssueApi()->comments()->create($this->owner(), $this->repo(), $issueNumber, ['body' => $comment]));
+                ->withIdempotencyKey($idempotencyKey)
+                ->post(function (RequestContext $ctx) use ($issueNumber, $comment): array {
+                    $result = $this->getIssueApi()->comments()->create($this->owner(), $this->repo(), $issueNumber, ['body' => $comment]);
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $result;
+                });
 
             return GitHubCommentData::from($response);
         });

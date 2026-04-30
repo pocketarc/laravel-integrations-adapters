@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use Stripe\Charge;
 use Stripe\Collection;
 
@@ -16,7 +17,10 @@ class StripeCharges extends StripeResource
 
         $response = $this->integration
             ->at("charges/{$id}")
-            ->get(fn (): Charge => $this->sdk()->charges->retrieve($id));
+            ->get(fn (RequestContext $ctx): Charge => $this->callStripe(
+                $ctx,
+                fn (): Charge => $this->sdk()->charges->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -38,12 +42,18 @@ class StripeCharges extends StripeResource
             $params['receipt_email'] = $receiptEmail;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at("charges/{$id}/capture")
             ->withData($params)
-            ->post(fn (): Charge => $this->sdk()->charges->capture($id, $params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): Charge => $this->callStripe(
+                $ctx,
+                fn (): Charge => $this->sdk()->charges->capture(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -70,7 +80,10 @@ class StripeCharges extends StripeResource
         $response = $this->integration
             ->at('charges')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->charges->all($params));
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->charges->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

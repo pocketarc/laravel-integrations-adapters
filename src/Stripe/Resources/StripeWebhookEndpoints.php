@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use Stripe\Collection;
 use Stripe\WebhookEndpoint;
 
@@ -19,6 +20,7 @@ class StripeWebhookEndpoints extends StripeResource
         array $enabledEvents,
         ?string $description = null,
         ?array $metadata = null,
+        ?string $idempotencyKey = null,
     ): WebhookEndpoint {
         $params = [
             'url' => $url,
@@ -34,7 +36,14 @@ class StripeWebhookEndpoints extends StripeResource
         $response = $this->integration
             ->at('webhook_endpoints')
             ->withData($params)
-            ->post(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->create($params));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): WebhookEndpoint => $this->callStripe(
+                $ctx,
+                fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->create(
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, WebhookEndpoint::class);
     }
@@ -45,7 +54,10 @@ class StripeWebhookEndpoints extends StripeResource
 
         $response = $this->integration
             ->at("webhook_endpoints/{$id}")
-            ->get(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->retrieve($id));
+            ->get(fn (RequestContext $ctx): WebhookEndpoint => $this->callStripe(
+                $ctx,
+                fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->retrieve($id),
+            ));
 
         return $this->expectInstance($response, WebhookEndpoint::class);
     }
@@ -61,6 +73,7 @@ class StripeWebhookEndpoints extends StripeResource
         ?string $description = null,
         ?bool $disabled = null,
         ?array $metadata = null,
+        ?string $idempotencyKey = null,
     ): WebhookEndpoint {
         $this->assertId($id);
 
@@ -84,7 +97,15 @@ class StripeWebhookEndpoints extends StripeResource
         $response = $this->integration
             ->at("webhook_endpoints/{$id}")
             ->withData($params)
-            ->post(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->update($id, $params));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): WebhookEndpoint => $this->callStripe(
+                $ctx,
+                fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->update(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, WebhookEndpoint::class);
     }
@@ -95,7 +116,10 @@ class StripeWebhookEndpoints extends StripeResource
 
         $response = $this->integration
             ->at("webhook_endpoints/{$id}")
-            ->delete(fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->delete($id));
+            ->delete(fn (RequestContext $ctx): WebhookEndpoint => $this->callStripe(
+                $ctx,
+                fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->delete($id),
+            ));
 
         return $this->expectInstance($response, WebhookEndpoint::class);
     }
@@ -114,7 +138,10 @@ class StripeWebhookEndpoints extends StripeResource
         $response = $this->integration
             ->at('webhook_endpoints')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->webhookEndpoints->all($params));
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->webhookEndpoints->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use Stripe\Collection;
 use Stripe\Dispute;
 
@@ -16,7 +17,10 @@ class StripeDisputes extends StripeResource
 
         $response = $this->integration
             ->at("disputes/{$id}")
-            ->get(fn (): Dispute => $this->sdk()->disputes->retrieve($id));
+            ->get(fn (RequestContext $ctx): Dispute => $this->callStripe(
+                $ctx,
+                fn (): Dispute => $this->sdk()->disputes->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Dispute::class);
     }
@@ -33,6 +37,7 @@ class StripeDisputes extends StripeResource
         string $id,
         ?bool $submit = null,
         ?array $metadata = null,
+        ?string $idempotencyKey = null,
     ): Dispute {
         $this->assertId($id);
 
@@ -47,18 +52,34 @@ class StripeDisputes extends StripeResource
         $response = $this->integration
             ->at("disputes/{$id}")
             ->withData($params)
-            ->post(fn (): Dispute => $this->sdk()->disputes->update($id, $params));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): Dispute => $this->callStripe(
+                $ctx,
+                fn (): Dispute => $this->sdk()->disputes->update(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Dispute::class);
     }
 
-    public function close(string $id): Dispute
+    public function close(string $id, ?string $idempotencyKey = null): Dispute
     {
         $this->assertId($id);
 
         $response = $this->integration
             ->at("disputes/{$id}/close")
-            ->post(fn (): Dispute => $this->sdk()->disputes->close($id));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): Dispute => $this->callStripe(
+                $ctx,
+                fn (): Dispute => $this->sdk()->disputes->close(
+                    $id,
+                    null,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Dispute::class);
     }
@@ -85,7 +106,10 @@ class StripeDisputes extends StripeResource
         $response = $this->integration
             ->at('disputes')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->disputes->all($params));
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->disputes->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

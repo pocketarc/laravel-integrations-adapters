@@ -90,7 +90,7 @@ class StripeClientTest extends TestCase
     public function test_boot_errors_if_credentials_are_the_wrong_type(): void
     {
         // Bypass CreatesIntegration so we can create a row with no typed
-        // credentials — boot() should reject it rather than silently work.
+        // credentials: boot() should reject it rather than silently work.
         $integration = Integration::create(['provider' => 'stripe', 'name' => 'Stripe']);
 
         $client = new StripeClient($integration);

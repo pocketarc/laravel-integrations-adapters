@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use InvalidArgumentException;
 use Stripe\Collection;
 use Stripe\Refund;
@@ -55,12 +56,17 @@ class StripeRefunds extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at('refunds')
             ->withData($params)
-            ->post(fn (): Refund => $this->sdk()->refunds->create($params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): Refund => $this->callStripe(
+                $ctx,
+                fn (): Refund => $this->sdk()->refunds->create(
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Refund::class);
     }
@@ -71,7 +77,10 @@ class StripeRefunds extends StripeResource
 
         $response = $this->integration
             ->at("refunds/{$id}")
-            ->get(fn (): Refund => $this->sdk()->refunds->retrieve($id));
+            ->get(fn (RequestContext $ctx): Refund => $this->callStripe(
+                $ctx,
+                fn (): Refund => $this->sdk()->refunds->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Refund::class);
     }
@@ -98,7 +107,10 @@ class StripeRefunds extends StripeResource
         $response = $this->integration
             ->at('refunds')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->refunds->all($params));
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->refunds->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

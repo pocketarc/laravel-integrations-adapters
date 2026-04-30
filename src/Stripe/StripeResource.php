@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe;
 
-use Illuminate\Support\Str;
 use Integrations\Models\Integration;
+use Integrations\RequestContext;
 use InvalidArgumentException;
+use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient as StripeSdkClient;
+use Stripe\StripeObject;
+use Stripe\Util\CaseInsensitiveArray;
 use UnexpectedValueException;
 
 abstract class StripeResource
@@ -45,21 +48,102 @@ abstract class StripeResource
     }
 
     /**
-     * Null returns a fresh UUID so core retries inside one call stay idempotent.
-     * A blank string is rejected rather than forwarded, since it silently turns
-     * off Stripe's duplicate protection.
+     * Pull what we can from Stripe's response (request ID, rate-limit info
+     * when present) and feed it back to core via the RequestContext.
+     * Stripe stores the last response on the returned StripeObject (not on
+     * the client), so reporting needs the actual resource. On the error
+     * path, ApiErrorException carries the same metadata directly.
+     *
+     * Stripe sets `Request-Id` on every response, which is the value
+     * support tickets ask for. Rate-limit headers are only emitted on 429s,
+     * so most calls report just the request ID.
+     *
+     * Most callers should reach for {@see callStripe()}, which wraps the
+     * SDK call in the success/error reporting boilerplate.
      */
-    protected function resolveIdempotencyKey(?string $key): string
+    protected function reportStripeMetadata(
+        RequestContext $ctx,
+        StripeObject|ApiErrorException|null $source,
+    ): void {
+        if ($source === null) {
+            return;
+        }
+
+        if ($source instanceof ApiErrorException) {
+            $requestId = $source->getRequestId();
+        } else {
+            $last = $source->getLastResponse();
+            if ($last === null) {
+                return;
+            }
+            $requestId = $this->headerString($last->headers, 'Request-Id');
+        }
+
+        if ($requestId !== null && $requestId !== '') {
+            $ctx->reportResponseMetadata(providerRequestId: $requestId);
+        }
+    }
+
+    /**
+     * Build the Stripe-side request options array, conditionally including
+     * the idempotency key. Stripe's typed array shape rejects `null` for
+     * `idempotency_key`, so we omit the key entirely when the context
+     * doesn't carry one.
+     *
+     * @return array{idempotency_key?: string}
+     */
+    protected function stripeOptions(RequestContext $ctx): array
     {
-        if ($key === null) {
-            return Str::uuid()->toString();
+        if ($ctx->idempotencyKey === null) {
+            return [];
         }
 
-        if ($key === '') {
-            throw new InvalidArgumentException('idempotencyKey must not be empty when provided.');
+        return ['idempotency_key' => $ctx->idempotencyKey];
+    }
+
+    /**
+     * Run an SDK call and report its metadata to core regardless of
+     * outcome. Returns whatever the call produced; rethrows
+     * ApiErrorException after recording the request ID so the failed
+     * request still has a paste-ready ID for support tickets.
+     *
+     * @template T of StripeObject
+     *
+     * @param  callable(): T  $sdkCall
+     * @return T
+     *
+     * @param-immediately-invoked-callable $sdkCall
+     */
+    protected function callStripe(RequestContext $ctx, callable $sdkCall): StripeObject
+    {
+        try {
+            $result = $sdkCall();
+        } catch (ApiErrorException $e) {
+            $this->reportStripeMetadata($ctx, $e);
+
+            throw $e;
         }
 
-        return $key;
+        $this->reportStripeMetadata($ctx, $result);
+
+        return $result;
+    }
+
+    /**
+     * Read a header value out of Stripe's response. The SDK's own
+     * `ApiResponse::$headers` PHPDoc widens to `array|CaseInsensitiveArray|null`,
+     * so we accept that union and treat the value as opaque until the
+     * `is_string` check below pins it down.
+     */
+    private function headerString(mixed $headers, string $name): ?string
+    {
+        if (! is_array($headers) && ! ($headers instanceof CaseInsensitiveArray)) {
+            return null;
+        }
+
+        $value = $headers[$name] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

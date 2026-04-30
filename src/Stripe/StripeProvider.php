@@ -9,6 +9,7 @@ use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\SupportsIdempotency;
 use Integrations\Models\Integration;
 use Safe\Exceptions\JsonException;
 use Stripe\Exception\SignatureVerificationException;
@@ -20,14 +21,14 @@ use function Safe\json_decode;
  * Stripe integration provider. Handles credential typing, webhook signature
  * verification, health checks, and a generic event pipeline that dispatches
  * `StripeWebhookReceived` for every verified delivery. Consumers listen for
- * that event and route by type to their own Actions — this adapter stays
+ * that event and route by type to their own Actions; this adapter stays
  * free of domain-specific routing.
  *
  * For making API calls, resolve a `StripeClient` for the Integration and use
  * its resource accessors (`->paymentIntents()`, `->refunds()`, etc.) rather
  * than reaching into `\Stripe\*` types.
  */
-class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider
+class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider, SupportsIdempotency
 {
     #[\Override]
     public function name(): string

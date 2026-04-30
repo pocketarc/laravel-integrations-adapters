@@ -183,8 +183,8 @@ class PostmarkMailerOverrideTest extends TestCase
 
         (new PostmarkProvider)->useForMail($integration);
 
-        // Re-resolving via the facade must yield a different instance —
-        // proves both the container singleton and the facade's
+        // Re-resolving via the facade must yield a different instance.
+        // Proves both the container singleton and the facade's
         // resolved-instance cache were cleared. (Container::resolved()
         // is sticky once the abstract has ever been resolved, so the
         // identity check is the reliable signal.)

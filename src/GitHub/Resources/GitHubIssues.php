@@ -10,16 +10,27 @@ use Integrations\Adapters\GitHub\Data\GitHubEventData;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Enums\GitHubIssueStateReason;
 use Integrations\Adapters\GitHub\GitHubResource;
+use Integrations\RequestContext;
 
 class GitHubIssues extends GitHubResource
 {
     /**
      * Create a new GitHub issue.
      *
+     * The optional `$idempotencyKey` is persisted on
+     * `integration_requests.idempotency_key` for searchability and our-side
+     * dedup downstream, but GitHub itself doesn't natively dedupe by it.
+     * Core logs a warning when one is set against a non-`SupportsIdempotency`
+     * provider.
+     *
      * @param  array<string>  $labels
      */
-    public function create(string $title, string $body, array $labels = []): GitHubIssueData
-    {
+    public function create(
+        string $title,
+        string $body,
+        array $labels = [],
+        ?string $idempotencyKey = null,
+    ): GitHubIssueData {
         try {
             $params = [
                 'title' => $title,
@@ -34,7 +45,13 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues")
                 ->withData($params)
-                ->post(fn (): array => $this->getIssueApi()->create($this->owner(), $this->repo(), $params));
+                ->withIdempotencyKey($idempotencyKey)
+                ->post(function (RequestContext $ctx) use ($params): array {
+                    $issue = $this->getIssueApi()->create($this->owner(), $this->repo(), $params);
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $issue;
+                });
 
             return GitHubIssueData::from($response);
         } catch (\Throwable $e) {
@@ -59,7 +76,12 @@ class GitHubIssues extends GitHubResource
         /** @var array<string, mixed>|null */
         return $this->executeWithErrorHandling(fn () => $this->integration
             ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
-            ->get(fn (): array => $this->getIssueApi()->show($this->owner(), $this->repo(), $issueNumber)));
+            ->get(function (RequestContext $ctx) use ($issueNumber): array {
+                $issue = $this->getIssueApi()->show($this->owner(), $this->repo(), $issueNumber);
+                $this->reportGitHubMetadata($ctx);
+
+                return $issue;
+            }));
     }
 
     public function close(int $issueNumber, ?GitHubIssueStateReason $stateReason = null): ?GitHubIssueData
@@ -79,7 +101,12 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData($params)
-                ->patch(fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params));
+                ->patch(function (RequestContext $ctx) use ($issueNumber, $params): array {
+                    $issue = $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params);
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $issue;
+                });
 
             return GitHubIssueData::from($response);
         });
@@ -92,7 +119,12 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData(['state' => 'open'])
-                ->patch(fn (): array => $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open']));
+                ->patch(function (RequestContext $ctx) use ($issueNumber): array {
+                    $issue = $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open']);
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $issue;
+                });
 
             return GitHubIssueData::from($response);
         });
@@ -115,20 +147,25 @@ class GitHubIssues extends GitHubResource
             $issues = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues?page={$page}")
                 ->withData(['since' => $since->format('c'), 'page' => $page])
-                ->get(fn (): array => $this->getIssueApi()
-                    ->configure('full')
-                    ->all(
-                        $this->owner(),
-                        $this->repo(),
-                        [
-                            'state' => 'all',
-                            'since' => $since->format('c'),
-                            'sort' => 'updated',
-                            'direction' => 'desc',
-                            'per_page' => $perPage,
-                            'page' => $page,
-                        ]
-                    ));
+                ->get(function (RequestContext $ctx) use ($since, $perPage, $page): array {
+                    $result = $this->getIssueApi()
+                        ->configure('full')
+                        ->all(
+                            $this->owner(),
+                            $this->repo(),
+                            [
+                                'state' => 'all',
+                                'since' => $since->format('c'),
+                                'sort' => 'updated',
+                                'direction' => 'desc',
+                                'per_page' => $perPage,
+                                'page' => $page,
+                            ]
+                        );
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $result;
+                });
 
             if ($issues === []) {
                 break;
@@ -162,7 +199,12 @@ class GitHubIssues extends GitHubResource
         $timeline = $this->integration
             ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
             ->withData(['issue_number' => $issueNumber, 'page' => $page])
-            ->get(fn (): array => $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner(), $this->repo(), $issueNumber]));
+            ->get(function (RequestContext $ctx) use ($pager, $issueNumber): array {
+                $result = $pager->fetch($this->getIssueApi()->timeline(), 'all', [$this->owner(), $this->repo(), $issueNumber]);
+                $this->reportGitHubMetadata($ctx);
+
+                return $result;
+            });
 
         foreach ($timeline as $event) {
             $callback(GitHubEventData::from($event));
@@ -175,7 +217,12 @@ class GitHubIssues extends GitHubResource
             $timeline = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}/timeline?page={$page}")
                 ->withData(['issue_number' => $issueNumber, 'page' => $page])
-                ->get(fn (): array => $pager->fetchNext());
+                ->get(function (RequestContext $ctx) use ($pager): array {
+                    $result = $pager->fetchNext();
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $result;
+                });
 
             foreach ($timeline as $event) {
                 $callback(GitHubEventData::from($event));

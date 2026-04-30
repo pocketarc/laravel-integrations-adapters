@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\RequestContext;
 use Stripe\Collection;
 use Stripe\PaymentIntent;
 
@@ -56,12 +57,17 @@ class StripePaymentIntents extends StripeResource
             $params['metadata'] = $metadata;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at('payment_intents')
             ->withData($params)
-            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->create($params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
+                $ctx,
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->create(
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, PaymentIntent::class);
     }
@@ -72,7 +78,10 @@ class StripePaymentIntents extends StripeResource
 
         $response = $this->integration
             ->at("payment_intents/{$id}")
-            ->get(fn (): PaymentIntent => $this->sdk()->paymentIntents->retrieve($id));
+            ->get(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
+                $ctx,
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->retrieve($id),
+            ));
 
         return $this->expectInstance($response, PaymentIntent::class);
     }
@@ -85,6 +94,7 @@ class StripePaymentIntents extends StripeResource
         ?string $description = null,
         ?string $receiptEmail = null,
         ?array $metadata = null,
+        ?string $idempotencyKey = null,
     ): PaymentIntent {
         $this->assertId($id);
 
@@ -102,7 +112,15 @@ class StripePaymentIntents extends StripeResource
         $response = $this->integration
             ->at("payment_intents/{$id}")
             ->withData($params)
-            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->update($id, $params));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
+                $ctx,
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->update(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, PaymentIntent::class);
     }
@@ -117,12 +135,18 @@ class StripePaymentIntents extends StripeResource
             $params['payment_method'] = $paymentMethod;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at("payment_intents/{$id}/confirm")
             ->withData($params)
-            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->confirm($id, $params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
+                $ctx,
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->confirm(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, PaymentIntent::class);
     }
@@ -137,12 +161,18 @@ class StripePaymentIntents extends StripeResource
             $params['amount_to_capture'] = $amountToCapture;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at("payment_intents/{$id}/capture")
             ->withData($params)
-            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->capture($id, $params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
+                $ctx,
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->capture(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, PaymentIntent::class);
     }
@@ -156,12 +186,18 @@ class StripePaymentIntents extends StripeResource
             $params['cancellation_reason'] = $cancellationReason;
         }
 
-        $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
         $response = $this->integration
             ->at("payment_intents/{$id}/cancel")
             ->withData($params)
-            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->cancel($id, $params, ['idempotency_key' => $idempotencyKey]));
+            ->withIdempotencyKey($idempotencyKey)
+            ->post(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
+                $ctx,
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->cancel(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, PaymentIntent::class);
     }
@@ -184,7 +220,10 @@ class StripePaymentIntents extends StripeResource
         $response = $this->integration
             ->at('payment_intents')
             ->withData($params)
-            ->get(fn (): Collection => $this->sdk()->paymentIntents->all($params));
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->paymentIntents->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }
