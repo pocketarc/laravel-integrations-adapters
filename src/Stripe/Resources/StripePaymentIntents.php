@@ -94,6 +94,7 @@ class StripePaymentIntents extends StripeResource
         ?string $description = null,
         ?string $receiptEmail = null,
         ?array $metadata = null,
+        ?string $idempotencyKey = null,
     ): PaymentIntent {
         $this->assertId($id);
 
@@ -111,9 +112,14 @@ class StripePaymentIntents extends StripeResource
         $response = $this->integration
             ->at("payment_intents/{$id}")
             ->withData($params)
+            ->withIdempotencyKey($idempotencyKey)
             ->post(fn (RequestContext $ctx): PaymentIntent => $this->callStripe(
                 $ctx,
-                fn (): PaymentIntent => $this->sdk()->paymentIntents->update($id, $params),
+                fn (): PaymentIntent => $this->sdk()->paymentIntents->update(
+                    $id,
+                    $params,
+                    $this->stripeOptions($ctx),
+                ),
             ));
 
         return $this->expectInstance($response, PaymentIntent::class);
