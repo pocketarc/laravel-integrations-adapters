@@ -17,12 +17,10 @@ class StripeCharges extends StripeResource
 
         $response = $this->integration
             ->at("charges/{$id}")
-            ->get(function (RequestContext $ctx) use ($id): Charge {
-                $charge = $this->sdk()->charges->retrieve($id);
-                $this->reportStripeMetadata($ctx);
-
-                return $charge;
-            });
+            ->get(fn (RequestContext $ctx): Charge => $this->callStripe(
+                $ctx,
+                fn (): Charge => $this->sdk()->charges->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -48,16 +46,14 @@ class StripeCharges extends StripeResource
             ->at("charges/{$id}/capture")
             ->withData($params)
             ->withIdempotencyKey($idempotencyKey)
-            ->post(function (RequestContext $ctx) use ($id, $params): Charge {
-                $charge = $this->sdk()->charges->capture(
+            ->post(fn (RequestContext $ctx): Charge => $this->callStripe(
+                $ctx,
+                fn (): Charge => $this->sdk()->charges->capture(
                     $id,
                     $params,
-                    ['idempotency_key' => $ctx->idempotencyKey],
-                );
-                $this->reportStripeMetadata($ctx);
-
-                return $charge;
-            });
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Charge::class);
     }
@@ -84,12 +80,10 @@ class StripeCharges extends StripeResource
         $response = $this->integration
             ->at('charges')
             ->withData($params)
-            ->get(function (RequestContext $ctx) use ($params): Collection {
-                $list = $this->sdk()->charges->all($params);
-                $this->reportStripeMetadata($ctx);
-
-                return $list;
-            });
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->charges->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

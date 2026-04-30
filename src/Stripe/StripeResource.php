@@ -7,7 +7,9 @@ namespace Integrations\Adapters\Stripe;
 use Integrations\Models\Integration;
 use Integrations\RequestContext;
 use InvalidArgumentException;
+use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient as StripeSdkClient;
+use Stripe\StripeObject;
 use Stripe\Util\CaseInsensitiveArray;
 use UnexpectedValueException;
 
@@ -46,39 +48,96 @@ abstract class StripeResource
     }
 
     /**
-     * Pull what we can from Stripe's last response (request ID, rate-limit
-     * info when present) and feed it back to core via the RequestContext.
-     * Stripe sets `Request-Id` on every response, which is the value support
-     * tickets ask for. Rate-limit headers are only emitted on 429s, so most
-     * calls report just the request ID.
+     * Pull what we can from Stripe's response (request ID, rate-limit info
+     * when present) and feed it back to core via the RequestContext.
+     * Stripe stores the last response on the returned StripeObject (not on
+     * the client), so reporting needs the actual resource. On the error
+     * path, ApiErrorException carries the same metadata directly.
      *
-     * Adapter resource methods should call this right after the SDK call
-     * returns inside the closure passed to `Integration::request()`.
+     * Stripe sets `Request-Id` on every response, which is the value
+     * support tickets ask for. Rate-limit headers are only emitted on 429s,
+     * so most calls report just the request ID.
+     *
+     * Most callers should reach for {@see callStripe()}, which wraps the
+     * SDK call in the success/error reporting boilerplate.
      */
-    protected function reportStripeMetadata(RequestContext $ctx): void
-    {
-        $last = $this->sdk()->getLastResponse();
-        if ($last === null) {
+    protected function reportStripeMetadata(
+        RequestContext $ctx,
+        StripeObject|ApiErrorException|null $source,
+    ): void {
+        if ($source === null) {
             return;
         }
 
-        $headers = $last->headers;
+        if ($source instanceof ApiErrorException) {
+            $requestId = $source->getRequestId();
+        } else {
+            $last = $source->getLastResponse();
+            if ($last === null) {
+                return;
+            }
+            $requestId = $this->headerString($last->headers, 'Request-Id');
+        }
 
-        $ctx->reportResponseMetadata(
-            providerRequestId: $this->stringHeader($headers, 'Request-Id'),
-        );
+        if ($requestId !== null && $requestId !== '') {
+            $ctx->reportResponseMetadata(providerRequestId: $requestId);
+        }
     }
 
     /**
-     * Stripe's CaseInsensitiveArray supports normal array access by any
-     * casing, but we still need a defensive cast to string so PHPStan can
-     * see a non-mixed return.
+     * Build the Stripe-side request options array, conditionally including
+     * the idempotency key. Stripe's typed array shape rejects `null` for
+     * `idempotency_key`, so we omit the key entirely when the context
+     * doesn't carry one.
      *
-     * @param  CaseInsensitiveArray<string, mixed>|array<string, mixed>  $headers
+     * @return array{idempotency_key?: string}
      */
-    private function stringHeader(mixed $headers, string $name): ?string
+    protected function stripeOptions(RequestContext $ctx): array
     {
-        if (! is_array($headers) && ! ($headers instanceof \ArrayAccess)) {
+        if ($ctx->idempotencyKey === null) {
+            return [];
+        }
+
+        return ['idempotency_key' => $ctx->idempotencyKey];
+    }
+
+    /**
+     * Run an SDK call and report its metadata to core regardless of
+     * outcome. Returns whatever the call produced; rethrows
+     * ApiErrorException after recording the request ID so the failed
+     * request still has a paste-ready ID for support tickets.
+     *
+     * @template T of StripeObject
+     *
+     * @param  callable(): T  $sdkCall
+     * @return T
+     *
+     * @param-immediately-invoked-callable $sdkCall
+     */
+    protected function callStripe(RequestContext $ctx, callable $sdkCall): StripeObject
+    {
+        try {
+            $result = $sdkCall();
+        } catch (ApiErrorException $e) {
+            $this->reportStripeMetadata($ctx, $e);
+
+            throw $e;
+        }
+
+        $this->reportStripeMetadata($ctx, $result);
+
+        return $result;
+    }
+
+    /**
+     * Read a header value out of Stripe's response. The SDK's own
+     * `ApiResponse::$headers` PHPDoc widens to `array|CaseInsensitiveArray|null`,
+     * so we accept that union and treat the value as opaque until the
+     * `is_string` check below pins it down.
+     */
+    private function headerString(mixed $headers, string $name): ?string
+    {
+        if (! is_array($headers) && ! ($headers instanceof CaseInsensitiveArray)) {
             return null;
         }
 

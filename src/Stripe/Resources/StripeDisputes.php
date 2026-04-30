@@ -17,12 +17,10 @@ class StripeDisputes extends StripeResource
 
         $response = $this->integration
             ->at("disputes/{$id}")
-            ->get(function (RequestContext $ctx) use ($id): Dispute {
-                $dispute = $this->sdk()->disputes->retrieve($id);
-                $this->reportStripeMetadata($ctx);
-
-                return $dispute;
-            });
+            ->get(fn (RequestContext $ctx): Dispute => $this->callStripe(
+                $ctx,
+                fn (): Dispute => $this->sdk()->disputes->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Dispute::class);
     }
@@ -55,16 +53,14 @@ class StripeDisputes extends StripeResource
             ->at("disputes/{$id}")
             ->withData($params)
             ->withIdempotencyKey($idempotencyKey)
-            ->post(function (RequestContext $ctx) use ($id, $params): Dispute {
-                $dispute = $this->sdk()->disputes->update(
+            ->post(fn (RequestContext $ctx): Dispute => $this->callStripe(
+                $ctx,
+                fn (): Dispute => $this->sdk()->disputes->update(
                     $id,
                     $params,
-                    ['idempotency_key' => $ctx->idempotencyKey],
-                );
-                $this->reportStripeMetadata($ctx);
-
-                return $dispute;
-            });
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Dispute::class);
     }
@@ -76,16 +72,14 @@ class StripeDisputes extends StripeResource
         $response = $this->integration
             ->at("disputes/{$id}/close")
             ->withIdempotencyKey($idempotencyKey)
-            ->post(function (RequestContext $ctx) use ($id): Dispute {
-                $dispute = $this->sdk()->disputes->close(
+            ->post(fn (RequestContext $ctx): Dispute => $this->callStripe(
+                $ctx,
+                fn (): Dispute => $this->sdk()->disputes->close(
                     $id,
                     null,
-                    ['idempotency_key' => $ctx->idempotencyKey],
-                );
-                $this->reportStripeMetadata($ctx);
-
-                return $dispute;
-            });
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Dispute::class);
     }
@@ -112,12 +106,10 @@ class StripeDisputes extends StripeResource
         $response = $this->integration
             ->at('disputes')
             ->withData($params)
-            ->get(function (RequestContext $ctx) use ($params): Collection {
-                $list = $this->sdk()->disputes->all($params);
-                $this->reportStripeMetadata($ctx);
-
-                return $list;
-            });
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->disputes->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

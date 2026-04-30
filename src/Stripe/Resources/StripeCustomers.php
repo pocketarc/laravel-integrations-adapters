@@ -43,15 +43,13 @@ class StripeCustomers extends StripeResource
             ->at('customers')
             ->withData($params)
             ->withIdempotencyKey($idempotencyKey)
-            ->post(function (RequestContext $ctx) use ($params): Customer {
-                $customer = $this->sdk()->customers->create(
+            ->post(fn (RequestContext $ctx): Customer => $this->callStripe(
+                $ctx,
+                fn (): Customer => $this->sdk()->customers->create(
                     $params,
-                    ['idempotency_key' => $ctx->idempotencyKey],
-                );
-                $this->reportStripeMetadata($ctx);
-
-                return $customer;
-            });
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Customer::class);
     }
@@ -62,12 +60,10 @@ class StripeCustomers extends StripeResource
 
         $response = $this->integration
             ->at("customers/{$id}")
-            ->get(function (RequestContext $ctx) use ($id): Customer {
-                $customer = $this->sdk()->customers->retrieve($id);
-                $this->reportStripeMetadata($ctx);
-
-                return $customer;
-            });
+            ->get(fn (RequestContext $ctx): Customer => $this->callStripe(
+                $ctx,
+                fn (): Customer => $this->sdk()->customers->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Customer::class);
     }
@@ -107,16 +103,14 @@ class StripeCustomers extends StripeResource
             ->at("customers/{$id}")
             ->withData($params)
             ->withIdempotencyKey($idempotencyKey)
-            ->post(function (RequestContext $ctx) use ($id, $params): Customer {
-                $customer = $this->sdk()->customers->update(
+            ->post(fn (RequestContext $ctx): Customer => $this->callStripe(
+                $ctx,
+                fn (): Customer => $this->sdk()->customers->update(
                     $id,
                     $params,
-                    ['idempotency_key' => $ctx->idempotencyKey],
-                );
-                $this->reportStripeMetadata($ctx);
-
-                return $customer;
-            });
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Customer::class);
     }
@@ -127,12 +121,10 @@ class StripeCustomers extends StripeResource
 
         $response = $this->integration
             ->at("customers/{$id}")
-            ->delete(function (RequestContext $ctx) use ($id): Customer {
-                $customer = $this->sdk()->customers->delete($id);
-                $this->reportStripeMetadata($ctx);
-
-                return $customer;
-            });
+            ->delete(fn (RequestContext $ctx): Customer => $this->callStripe(
+                $ctx,
+                fn (): Customer => $this->sdk()->customers->delete($id),
+            ));
 
         return $this->expectInstance($response, Customer::class);
     }
@@ -154,12 +146,10 @@ class StripeCustomers extends StripeResource
         $response = $this->integration
             ->at('customers')
             ->withData($params)
-            ->get(function (RequestContext $ctx) use ($params): Collection {
-                $list = $this->sdk()->customers->all($params);
-                $this->reportStripeMetadata($ctx);
-
-                return $list;
-            });
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->customers->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }

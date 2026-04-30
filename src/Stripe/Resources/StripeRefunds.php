@@ -60,15 +60,13 @@ class StripeRefunds extends StripeResource
             ->at('refunds')
             ->withData($params)
             ->withIdempotencyKey($idempotencyKey)
-            ->post(function (RequestContext $ctx) use ($params): Refund {
-                $refund = $this->sdk()->refunds->create(
+            ->post(fn (RequestContext $ctx): Refund => $this->callStripe(
+                $ctx,
+                fn (): Refund => $this->sdk()->refunds->create(
                     $params,
-                    ['idempotency_key' => $ctx->idempotencyKey],
-                );
-                $this->reportStripeMetadata($ctx);
-
-                return $refund;
-            });
+                    $this->stripeOptions($ctx),
+                ),
+            ));
 
         return $this->expectInstance($response, Refund::class);
     }
@@ -79,12 +77,10 @@ class StripeRefunds extends StripeResource
 
         $response = $this->integration
             ->at("refunds/{$id}")
-            ->get(function (RequestContext $ctx) use ($id): Refund {
-                $refund = $this->sdk()->refunds->retrieve($id);
-                $this->reportStripeMetadata($ctx);
-
-                return $refund;
-            });
+            ->get(fn (RequestContext $ctx): Refund => $this->callStripe(
+                $ctx,
+                fn (): Refund => $this->sdk()->refunds->retrieve($id),
+            ));
 
         return $this->expectInstance($response, Refund::class);
     }
@@ -111,12 +107,10 @@ class StripeRefunds extends StripeResource
         $response = $this->integration
             ->at('refunds')
             ->withData($params)
-            ->get(function (RequestContext $ctx) use ($params): Collection {
-                $list = $this->sdk()->refunds->all($params);
-                $this->reportStripeMetadata($ctx);
-
-                return $list;
-            });
+            ->get(fn (RequestContext $ctx): Collection => $this->callStripe(
+                $ctx,
+                fn (): Collection => $this->sdk()->refunds->all($params),
+            ));
 
         return $this->expectInstance($response, Collection::class);
     }
