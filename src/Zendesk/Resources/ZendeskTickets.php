@@ -31,13 +31,21 @@ class ZendeskTickets extends ZendeskResource
         });
     }
 
-    public function close(int $ticketId): ?ZendeskTicketData
+    /**
+     * Close a ticket. Pass `$idempotencyKey` (e.g. `"close-ticket:{$ticketId}"`)
+     * for at-most-once execution. Zendesk doesn't natively dedupe by
+     * header, so the local row in `integration_idempotency_keys` is the
+     * only protection against double-close under retry. A second call
+     * with the same key throws `Integrations\Exceptions\IdempotencyConflict`.
+     */
+    public function close(int $ticketId, ?string $idempotencyKey = null): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): ZendeskTicketData {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $idempotencyKey): ZendeskTicketData {
             return $this->integration
                 ->at("tickets/{$ticketId}.json")
                 ->as(ZendeskTicketData::class)
                 ->withData(['status' => ZendeskStatus::Solved->value])
+                ->withIdempotencyKey($idempotencyKey)
                 ->put(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->update($ticketId, ['status' => ZendeskStatus::Solved->value]);
                     $ticket = $response->ticket ?? null;
@@ -47,13 +55,17 @@ class ZendeskTickets extends ZendeskResource
         });
     }
 
-    public function reopen(int $ticketId): ?ZendeskTicketData
+    /**
+     * Reopen a ticket. Same idempotency semantics as close().
+     */
+    public function reopen(int $ticketId, ?string $idempotencyKey = null): ?ZendeskTicketData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId): ZendeskTicketData {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $idempotencyKey): ZendeskTicketData {
             return $this->integration
                 ->at("tickets/{$ticketId}.json")
                 ->as(ZendeskTicketData::class)
                 ->withData(['status' => ZendeskStatus::Open->value])
+                ->withIdempotencyKey($idempotencyKey)
                 ->put(function () use ($ticketId): ?stdClass {
                     $response = $this->sdk()->tickets()->update($ticketId, ['status' => ZendeskStatus::Open->value]);
                     $ticket = $response->ticket ?? null;

@@ -75,12 +75,19 @@ class PostmarkBounces extends PostmarkResource
      * Postmark's Bounce record has `CanActivate=true` (e.g. soft bounces);
      * hard bounces and spam complaints typically can't be reactivated via
      * the API.
+     *
+     * Pass `$idempotencyKey` (e.g. `"reactivate-bounce:{$bounceId}"`) for
+     * at-most-once execution. Postmark doesn't natively dedupe by header,
+     * so the local row in `integration_idempotency_keys` is the only
+     * protection against double-activation under retry. A second call
+     * with the same key throws `Integrations\Exceptions\IdempotencyConflict`.
      */
-    public function activate(int $bounceId): bool
+    public function activate(int $bounceId, ?string $idempotencyKey = null): bool
     {
-        return $this->executeWithErrorHandling(function () use ($bounceId): bool {
+        return $this->executeWithErrorHandling(function () use ($bounceId, $idempotencyKey): bool {
             $this->integration
                 ->at("bounces/{$bounceId}/activate")
+                ->withIdempotencyKey($idempotencyKey)
                 ->put(function () use ($bounceId): bool {
                     $this->sdk()->activateBounce($bounceId);
 

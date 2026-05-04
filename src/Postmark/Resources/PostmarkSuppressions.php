@@ -66,9 +66,14 @@ class PostmarkSuppressions extends PostmarkResource
      * as a failure for the whole batch and return false; the details end
      * up in the logs via `Log::warning`.
      *
+     * Pass `$idempotencyKey` (e.g. `"suppress:order-{$order->id}"`) for
+     * at-most-once execution. A second call with the same key throws
+     * `Integrations\Exceptions\IdempotencyConflict` and skips the API
+     * call.
+     *
      * @param  list<string>  $emailAddresses
      */
-    public function create(array $emailAddresses, ?string $messageStream = null): bool
+    public function create(array $emailAddresses, ?string $messageStream = null, ?string $idempotencyKey = null): bool
     {
         if ($emailAddresses === []) {
             return true;
@@ -76,12 +81,13 @@ class PostmarkSuppressions extends PostmarkResource
 
         $stream = $messageStream ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($emailAddresses, $stream): bool {
+        return $this->executeWithErrorHandling(function () use ($emailAddresses, $stream, $idempotencyKey): bool {
             $changes = array_map(fn (string $email): SuppressionChangeRequest => new SuppressionChangeRequest($email), $emailAddresses);
 
             $response = $this->integration
                 ->at("message-streams/{$stream}/suppressions")
                 ->withData(['Suppressions' => array_map(fn (string $email): array => ['EmailAddress' => $email], $emailAddresses)])
+                ->withIdempotencyKey($idempotencyKey)
                 ->post(function () use ($changes, $stream): PostmarkSuppressionResultList {
                     return $this->sdk()->createSuppressions($changes, $stream);
                 });
@@ -99,9 +105,14 @@ class PostmarkSuppressions extends PostmarkResource
      * Same per-recipient result handling as `create()`: we only return
      * true when every address comes back with Status="Deleted".
      *
+     * Pass `$idempotencyKey` (e.g. `"unsuppress:order-{$order->id}"`)
+     * for at-most-once execution. A second call with the same key throws
+     * `Integrations\Exceptions\IdempotencyConflict` and skips the API
+     * call.
+     *
      * @param  list<string>  $emailAddresses
      */
-    public function delete(array $emailAddresses, ?string $messageStream = null): bool
+    public function delete(array $emailAddresses, ?string $messageStream = null, ?string $idempotencyKey = null): bool
     {
         if ($emailAddresses === []) {
             return true;
@@ -109,12 +120,13 @@ class PostmarkSuppressions extends PostmarkResource
 
         $stream = $messageStream ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($emailAddresses, $stream): bool {
+        return $this->executeWithErrorHandling(function () use ($emailAddresses, $stream, $idempotencyKey): bool {
             $changes = array_map(fn (string $email): SuppressionChangeRequest => new SuppressionChangeRequest($email), $emailAddresses);
 
             $response = $this->integration
                 ->at("message-streams/{$stream}/suppressions/delete")
                 ->withData(['Suppressions' => array_map(fn (string $email): array => ['EmailAddress' => $email], $emailAddresses)])
+                ->withIdempotencyKey($idempotencyKey)
                 ->post(function () use ($changes, $stream): PostmarkSuppressionResultList {
                     return $this->sdk()->deleteSuppressions($changes, $stream);
                 });
