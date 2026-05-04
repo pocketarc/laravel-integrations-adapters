@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\RequestContext;
 use InvalidArgumentException;
 use Stripe\Collection;
@@ -16,9 +17,13 @@ class StripeRefunds extends StripeResource
      * Refund against a charge or a payment intent. Exactly one of `paymentIntent`
      * or `charge` must be provided.
      *
-     * An auto-generated idempotency key covers core retries inside one call,
-     * not re-issues from a queued job. Pass a stable key (e.g. derived from
-     * the originating domain event) when you need cross-invocation safety.
+     * Pass `$idempotencyKey` (e.g. `"refund:{$paymentIntent}:{$reason}"`)
+     * to make the call at-most-once: the package writes a row in
+     * `integration_idempotency_keys` before the SDK call fires, throws
+     * {@see IdempotencyConflict} on a second
+     * call with the same key, and forwards the key as Stripe's
+     * `Idempotency-Key` header so Stripe also dedupes upstream. Pass
+     * `null` (the default) to skip idempotency entirely.
      *
      * @param  array<string, string>|null  $metadata
      */

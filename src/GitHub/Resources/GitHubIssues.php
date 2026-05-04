@@ -10,6 +10,7 @@ use Integrations\Adapters\GitHub\Data\GitHubEventData;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Enums\GitHubIssueStateReason;
 use Integrations\Adapters\GitHub\GitHubResource;
+use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\RequestContext;
 
 class GitHubIssues extends GitHubResource
@@ -17,11 +18,13 @@ class GitHubIssues extends GitHubResource
     /**
      * Create a new GitHub issue.
      *
-     * The optional `$idempotencyKey` is persisted on
-     * `integration_requests.idempotency_key` for searchability and our-side
-     * dedup downstream, but GitHub itself doesn't natively dedupe by it.
-     * Core logs a warning when one is set against a non-`SupportsIdempotency`
-     * provider.
+     * Pass `$idempotencyKey` (e.g. `"open-issue:order-{$order->id}"`)
+     * for at-most-once execution: the package writes a row in
+     * `integration_idempotency_keys` before the call fires and throws
+     * {@see IdempotencyConflict} on a second
+     * call with the same key. GitHub itself doesn't natively dedupe by
+     * the header, so the local row is the only protection here. Pass
+     * `null` (the default) to skip idempotency entirely.
      *
      * @param  array<string>  $labels
      */
