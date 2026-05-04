@@ -17,11 +17,13 @@ class GitHubIssues extends GitHubResource
     /**
      * Create a new GitHub issue.
      *
-     * The optional `$idempotencyKey` is persisted on
-     * `integration_requests.idempotency_key` for searchability and our-side
-     * dedup downstream, but GitHub itself doesn't natively dedupe by it.
-     * Core logs a warning when one is set against a non-`SupportsIdempotency`
-     * provider.
+     * Pass `$idempotencyKey` (e.g. `"open-issue:order-{$order->id}"`)
+     * for at-most-once execution: the package writes a row in
+     * `integration_idempotency_keys` before the call fires and throws
+     * {@see \Integrations\Exceptions\IdempotencyConflict} on a second
+     * call with the same key. GitHub itself doesn't natively dedupe by
+     * the header, so the local row is the only protection here. Pass
+     * `null` (the default) to skip idempotency entirely.
      *
      * @param  array<string>  $labels
      */

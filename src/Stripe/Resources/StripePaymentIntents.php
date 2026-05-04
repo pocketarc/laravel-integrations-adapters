@@ -19,9 +19,13 @@ use Stripe\PaymentIntent;
 class StripePaymentIntents extends StripeResource
 {
     /**
-     * An auto-generated idempotency key covers core retries inside one call,
-     * not re-issues from a queued job. Pass a stable key (e.g. derived from
-     * the originating domain event) when you need cross-invocation safety.
+     * Pass `$idempotencyKey` (e.g. `"charge:order-{$order->id}"`) to make
+     * the call at-most-once: the package writes a row in
+     * `integration_idempotency_keys` before the SDK call fires, throws
+     * {@see \Integrations\Exceptions\IdempotencyConflict} on a second
+     * call with the same key, and forwards the key as Stripe's
+     * `Idempotency-Key` header so Stripe also dedupes upstream. Pass
+     * `null` (the default) to skip idempotency entirely.
      *
      * @param  array<string, string>|null  $metadata
      */
