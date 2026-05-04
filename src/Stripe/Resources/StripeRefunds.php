@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe\Resources;
 
 use Integrations\Adapters\Stripe\StripeResource;
+use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\RequestContext;
 use InvalidArgumentException;
 use Stripe\Collection;
@@ -19,7 +20,7 @@ class StripeRefunds extends StripeResource
      * Pass `$idempotencyKey` (e.g. `"refund:{$paymentIntent}:{$reason}"`)
      * to make the call at-most-once: the package writes a row in
      * `integration_idempotency_keys` before the SDK call fires, throws
-     * {@see \Integrations\Exceptions\IdempotencyConflict} on a second
+     * {@see IdempotencyConflict} on a second
      * call with the same key, and forwards the key as Stripe's
      * `Idempotency-Key` header so Stripe also dedupes upstream. Pass
      * `null` (the default) to skip idempotency entirely.
