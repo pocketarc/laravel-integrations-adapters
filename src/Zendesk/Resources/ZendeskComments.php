@@ -123,12 +123,21 @@ class ZendeskComments extends ZendeskResource
         return $ticketIds->unique()->values();
     }
 
-    public function add(int $ticketId, string $comment): ?ZendeskCommentData
+    /**
+     * Add a public comment to a ticket. Pass `$idempotencyKey` (e.g.
+     * `"comment:order-{$order->id}:zendesk"`) for at-most-once
+     * execution. Zendesk doesn't natively dedupe by header, so the local
+     * row in `integration_idempotency_keys` is the only protection
+     * against double-posts under retry. A second call with the same key
+     * throws `Integrations\Exceptions\IdempotencyConflict`.
+     */
+    public function add(int $ticketId, string $comment, ?string $idempotencyKey = null): ?ZendeskCommentData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId, $comment): ?ZendeskCommentData {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $comment, $idempotencyKey): ?ZendeskCommentData {
             $result = $this->integration
                 ->at("tickets/{$ticketId}.json")
                 ->withData(['comment' => $comment])
+                ->withIdempotencyKey($idempotencyKey)
                 ->put(function () use ($ticketId, $comment): ?ZendeskCommentData {
                     $response = $this->sdk()->tickets()->update($ticketId, [
                         'comment' => [
@@ -144,12 +153,17 @@ class ZendeskComments extends ZendeskResource
         });
     }
 
-    public function addInternalNote(int $ticketId, string $note): ?ZendeskCommentData
+    /**
+     * Add an internal (non-public) note to a ticket. Same idempotency
+     * semantics as add().
+     */
+    public function addInternalNote(int $ticketId, string $note, ?string $idempotencyKey = null): ?ZendeskCommentData
     {
-        return $this->executeWithErrorHandling(function () use ($ticketId, $note): ?ZendeskCommentData {
+        return $this->executeWithErrorHandling(function () use ($ticketId, $note, $idempotencyKey): ?ZendeskCommentData {
             $result = $this->integration
                 ->at("tickets/{$ticketId}.json")
                 ->withData(['note' => $note])
+                ->withIdempotencyKey($idempotencyKey)
                 ->put(function () use ($ticketId, $note): ?ZendeskCommentData {
                     $response = $this->sdk()->tickets()->update($ticketId, [
                         'comment' => [

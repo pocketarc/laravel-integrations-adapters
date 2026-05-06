@@ -45,18 +45,28 @@ $client = new ZendeskClient($integration);
 |                          | `->list($callback)`                     | Iterate all tickets via the SDK iterator.                                                                                                                                    |
 |                          | `->since($since, $callback)`            | Incremental ticket export with sideloaded users. Callback receives `ZendeskTicketData` and `?ZendeskUserData`.                                                               |
 |                          | `->newerThan($minId, $callback)`        | Fetch tickets with ID > `$minId` via Search API. For catching missed items.                                                                                                  |
-|                          | `->close($ticketId)`                    | Set ticket status to "solved". Returns `?ZendeskTicketData`.                                                                                                                 |
-|                          | `->reopen($ticketId)`                   | Set ticket status to "open". Returns `?ZendeskTicketData`.                                                                                                                   |
+|                          | `->close($ticketId, $idempotencyKey?)`  | Set ticket status to "solved". Returns `?ZendeskTicketData`.                                                                                                                 |
+|                          | `->reopen($ticketId, $idempotencyKey?)` | Set ticket status to "open". Returns `?ZendeskTicketData`.                                                                                                                   |
 | `$client->comments()`    | `->list($ticketId, $callback)`          | Iterate comments on a ticket (cursor-paginated). Callback receives `ZendeskCommentData`.                                                                                     |
 |                          | `->newerThan($minId, $callback, $days)` | Find comments with ID > `$minId` across tickets updated in the last `$days` (default 7). For catching missed comments. Callback receives `ZendeskCommentData` and ticket ID. |
-|                          | `->add($ticketId, $body)`               | Add a public comment. Returns `?ZendeskCommentData`.                                                                                                                         |
-|                          | `->addInternalNote($ticketId, $body)`   | Add an internal note (not visible to requester). Returns `?ZendeskCommentData`.                                                                                              |
+|                          | `->add($ticketId, $body, $idempotencyKey?)` | Add a public comment. Returns `?ZendeskCommentData`.                                                                                                                     |
+|                          | `->addInternalNote($ticketId, $body, $idempotencyKey?)` | Add an internal note (not visible to requester). Returns `?ZendeskCommentData`.                                                                          |
 | `$client->users()`       | `->get($userId)`                        | Get a single user. Returns `?ZendeskUserData`.                                                                                                                               |
 |                          | `->list($callback?)`                    | Iterate all users. Returns `Collection<ZendeskUserData>`.                                                                                                                    |
 | `$client->attachments()` | `->download($url)`                      | Download an attachment by content URL.                                                                                                                                       |
 |                          | `->freshUrl($ticketId, $attachmentId)`  | Get a fresh (non-expired) content URL for an attachment.                                                                                                                     |
 
 All resource methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
+
+### Idempotency
+
+Ticket close/reopen and comment writes accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"close-ticket:{$ticketId}"`, `"comment:order-{$order->id}:zendesk"`) when you need at-most-once execution.
+
+The package writes a row in `integration_idempotency_keys` before the call fires. A second call with the same key throws `Integrations\Exceptions\IdempotencyConflict` and skips the SDK invocation. Zendesk doesn't natively dedupe by header (`ZendeskProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here.
+
+Keys are capped at 191 characters and the row stays in place until `integrations:prune` removes it (default 90 days, configurable via `pruning.idempotency_keys_days`). If you need at-most-once across queue retries that may run later than that, raise the retention above your longest retry window.
+
+Pass `null` (the default) to skip idempotency entirely. See the [core idempotency guide](https://laravel-integrations.pocketarc.com/core-concepts/idempotency).
 
 ## Sync
 

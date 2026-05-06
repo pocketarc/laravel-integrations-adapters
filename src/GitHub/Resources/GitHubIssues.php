@@ -87,13 +87,13 @@ class GitHubIssues extends GitHubResource
             }));
     }
 
-    public function close(int $issueNumber, ?GitHubIssueStateReason $stateReason = null): ?GitHubIssueData
+    public function close(int $issueNumber, ?GitHubIssueStateReason $stateReason = null, ?string $idempotencyKey = null): ?GitHubIssueData
     {
         if ($stateReason === GitHubIssueStateReason::Reopened) {
             throw new \DomainException('Cannot close an issue with state_reason "reopened".');
         }
 
-        return $this->executeWithErrorHandling(function () use ($issueNumber, $stateReason): GitHubIssueData {
+        return $this->executeWithErrorHandling(function () use ($issueNumber, $stateReason, $idempotencyKey): GitHubIssueData {
             $params = ['state' => 'closed'];
 
             if ($stateReason !== null) {
@@ -104,6 +104,7 @@ class GitHubIssues extends GitHubResource
             $response = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData($params)
+                ->withIdempotencyKey($idempotencyKey)
                 ->patch(function (RequestContext $ctx) use ($issueNumber, $params): array {
                     $issue = $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params);
                     $this->reportGitHubMetadata($ctx);
@@ -115,13 +116,14 @@ class GitHubIssues extends GitHubResource
         });
     }
 
-    public function reopen(int $issueNumber): ?GitHubIssueData
+    public function reopen(int $issueNumber, ?string $idempotencyKey = null): ?GitHubIssueData
     {
-        return $this->executeWithErrorHandling(function () use ($issueNumber): GitHubIssueData {
+        return $this->executeWithErrorHandling(function () use ($issueNumber, $idempotencyKey): GitHubIssueData {
             /** @var array<string, mixed> $response */
             $response = $this->integration
                 ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
                 ->withData(['state' => 'open'])
+                ->withIdempotencyKey($idempotencyKey)
                 ->patch(function (RequestContext $ctx) use ($issueNumber): array {
                     $issue = $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, ['state' => 'open']);
                     $this->reportGitHubMetadata($ctx);

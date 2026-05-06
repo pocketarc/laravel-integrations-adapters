@@ -71,11 +71,12 @@ class PostmarkWebhookEndpoints extends PostmarkResource
         });
     }
 
-    public function delete(int $id): bool
+    public function delete(int $id, ?string $idempotencyKey = null): bool
     {
-        return $this->executeWithErrorHandling(function () use ($id): bool {
+        return $this->executeWithErrorHandling(function () use ($id, $idempotencyKey): bool {
             $this->integration
                 ->at("webhooks/{$id}")
+                ->withIdempotencyKey($idempotencyKey)
                 ->delete(function () use ($id): bool {
                     $this->sdk()->deleteWebhookConfiguration($id);
 
@@ -91,11 +92,11 @@ class PostmarkWebhookEndpoints extends PostmarkResource
      * @param  array<int, array{Name: string, Value: string}>|null  $httpHeaders
      * @param  array<string, mixed>|null  $triggers  Postmark's nested triggers shape; pass null to inherit defaults
      */
-    public function create(string $url, ?string $messageStream = null, ?array $httpAuth = null, ?array $httpHeaders = null, ?array $triggers = null): ?PostmarkWebhookEndpointData
+    public function create(string $url, ?string $messageStream = null, ?array $httpAuth = null, ?array $httpHeaders = null, ?array $triggers = null, ?string $idempotencyKey = null): ?PostmarkWebhookEndpointData
     {
         $stream = $messageStream ?? $this->client->defaultMessageStream();
 
-        return $this->executeWithErrorHandling(function () use ($url, $stream, $httpAuth, $httpHeaders, $triggers): PostmarkWebhookEndpointData {
+        return $this->executeWithErrorHandling(function () use ($url, $stream, $httpAuth, $httpHeaders, $triggers, $idempotencyKey): PostmarkWebhookEndpointData {
             $payload = array_filter([
                 'Url' => $url,
                 'MessageStream' => $stream,
@@ -108,6 +109,7 @@ class PostmarkWebhookEndpoints extends PostmarkResource
                 ->at('webhooks')
                 ->as(PostmarkWebhookEndpointData::class)
                 ->withData($payload)
+                ->withIdempotencyKey($idempotencyKey)
                 ->post(function () use ($payload): array {
                     $body = Http::withHeaders([
                         'X-Postmark-Server-Token' => $this->serverToken(),
