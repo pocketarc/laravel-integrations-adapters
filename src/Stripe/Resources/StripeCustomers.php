@@ -115,12 +115,13 @@ class StripeCustomers extends StripeResource
         return $this->expectInstance($response, Customer::class);
     }
 
-    public function delete(string $id): Customer
+    public function delete(string $id, ?string $idempotencyKey = null): Customer
     {
         $this->assertId($id);
 
         $response = $this->integration
             ->at("customers/{$id}")
+            ->withIdempotencyKey($idempotencyKey)
             ->delete(fn (RequestContext $ctx): Customer => $this->callStripe(
                 $ctx,
                 fn (): Customer => $this->sdk()->customers->delete($id),

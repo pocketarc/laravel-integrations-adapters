@@ -110,12 +110,13 @@ class StripeWebhookEndpoints extends StripeResource
         return $this->expectInstance($response, WebhookEndpoint::class);
     }
 
-    public function delete(string $id): WebhookEndpoint
+    public function delete(string $id, ?string $idempotencyKey = null): WebhookEndpoint
     {
         $this->assertId($id);
 
         $response = $this->integration
             ->at("webhook_endpoints/{$id}")
+            ->withIdempotencyKey($idempotencyKey)
             ->delete(fn (RequestContext $ctx): WebhookEndpoint => $this->callStripe(
                 $ctx,
                 fn (): WebhookEndpoint => $this->sdk()->webhookEndpoints->delete($id),
