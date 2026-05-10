@@ -117,7 +117,7 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
             throw new InvalidArgumentException('GitHubProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
         }
 
-        $client = new GitHubClient($integration);
+        $client = $this->makeClient($integration);
 
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
@@ -129,21 +129,16 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
             $since = $parsed->subHour();
         }
 
-        $successCount = 0;
-        $failureCount = 0;
-        $earliestFailureAt = null;
+        $state = new GitHubSyncState($integration);
 
-        $client->issues()->since($since, function (array $issue) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+        $client->issues()->since($since, function (array $issue) use ($integration, $state): void {
+            $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);
             try {
                 $issueData = GitHubIssueData::from($issue);
                 GitHubIssueSynced::dispatch($integration, $issueData);
-                $successCount++;
+                $state->recordSuccess($updatedAt);
             } catch (\Throwable $e) {
-                $failureCount++;
-                $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);
-                if ($updatedAt !== null) {
-                    $earliestFailureAt = $earliestFailureAt?->min($updatedAt) ?? $updatedAt;
-                }
+                $state->recordFailure($updatedAt);
 
                 Log::error('GitHubProvider: Failed processing issue: '.$e->getMessage(), [
                     'issue_number' => $issue['number'] ?? 'unknown',
@@ -152,9 +147,9 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
             }
         });
 
-        $safeSyncedAt = $this->resolveSyncCursor($earliestFailureAt, $failureCount, $since);
+        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since);
 
-        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
+        $result = new SyncResult($state->successCount(), $state->failureCount(), $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         GitHubSyncCompleted::dispatch($integration, $result);
 
         return $result;
@@ -224,6 +219,11 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    protected function makeClient(Integration $integration): GitHubClient
+    {
+        return new GitHubClient($integration);
     }
 
     private static function isRateLimitMessage(string $message): bool

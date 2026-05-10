@@ -83,7 +83,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             throw new InvalidArgumentException('ZendeskProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
         }
 
-        $client = new ZendeskClient($integration);
+        $client = $this->makeClient($integration);
 
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
@@ -95,19 +95,14 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             $since = $parsed->subHour();
         }
 
-        $successCount = 0;
-        $failureCount = 0;
-        $earliestFailureAt = null;
+        $state = new ZendeskSyncState($integration);
 
-        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, $state): void {
             try {
                 ZendeskTicketSynced::dispatch($integration, $ticket, $user);
-                $successCount++;
+                $state->recordSuccess($ticket->updated_at);
             } catch (\Throwable $e) {
-                $failureCount++;
-                if ($earliestFailureAt === null || $ticket->updated_at->isBefore($earliestFailureAt)) {
-                    $earliestFailureAt = $ticket->updated_at;
-                }
+                $state->recordFailure($ticket->updated_at);
 
                 Log::error('ZendeskProvider: Failed processing ticket: '.$e->getMessage(), [
                     'ticket_id' => $ticket->id,
@@ -116,9 +111,9 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             }
         });
 
-        $safeSyncedAt = $this->resolveSyncCursor($earliestFailureAt, $failureCount, $since);
+        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since);
 
-        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
+        $result = new SyncResult($state->successCount(), $state->failureCount(), $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         ZendeskSyncCompleted::dispatch($integration, $result);
 
         return $result;
@@ -176,6 +171,11 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    protected function makeClient(Integration $integration): ZendeskClient
+    {
+        return new ZendeskClient($integration);
     }
 
     private static function parseTimestamp(mixed $value): ?Carbon
