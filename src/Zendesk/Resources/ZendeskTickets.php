@@ -118,7 +118,7 @@ class ZendeskTickets extends ZendeskResource
                     ->at("incremental/tickets.json?start_time={$timestamp}")
                     ->as(ZendeskIncrementalTicketResponse::class)
                     ->withData(['start_time' => $timestamp])
-                    ->get(fn () => Http::send(
+                    ->get(fn () => self::decodeSdkResponse(Http::send(
                         $this->sdk(),
                         'incremental/tickets.json',
                         [
@@ -127,7 +127,7 @@ class ZendeskTickets extends ZendeskResource
                                 'include' => 'users',
                             ],
                         ]
-                    ));
+                    )));
 
                 if ($response->tickets->isEmpty()) {
                     break;
@@ -169,7 +169,7 @@ class ZendeskTickets extends ZendeskResource
                     ->at("search.json?page={$page}")
                     ->as(ZendeskSearchResponse::class)
                     ->withData(['min_id' => $minId, 'page' => $page])
-                    ->get(fn () => Http::send(
+                    ->get(fn () => self::decodeSdkResponse(Http::send(
                         $this->sdk(),
                         'search.json',
                         [
@@ -181,7 +181,7 @@ class ZendeskTickets extends ZendeskResource
                                 'include' => 'tickets(users)',
                             ],
                         ]
-                    ));
+                    )));
 
                 $users = $response->users->keyBy('id');
 

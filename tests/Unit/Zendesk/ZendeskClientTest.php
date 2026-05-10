@@ -330,6 +330,41 @@ class ZendeskClientTest extends TestCase
         $this->assertSame(456, $results[1][1]);
     }
 
+    public function test_since_hydrates_incremental_tickets_through_real_decode_path(): void
+    {
+        $mockHandler = new MockHandler([
+            $this->jsonResponse([
+                'tickets' => [
+                    array_merge($this->fakeTicket(), ['id' => 1001, 'requester_id' => 456]),
+                    array_merge($this->fakeTicket(), ['id' => 1002, 'requester_id' => 456]),
+                ],
+                'users' => [$this->fakeUser()],
+                'next_page' => null,
+                'end_of_stream' => true,
+                'count' => 2,
+            ]),
+        ]);
+
+        $integration = $this->createIntegrationModel();
+        $sdk = $this->createMockSdk($mockHandler);
+        $client = new ZendeskClient($integration, $sdk);
+
+        /** @var list<array{ZendeskTicketData, ?ZendeskUserData}> $received */
+        $received = [];
+        $client->tickets()->since(
+            new \DateTimeImmutable('2026-01-01T00:00:00Z'),
+            function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use (&$received): void {
+                $received[] = [$ticket, $user];
+            },
+        );
+
+        $this->assertCount(2, $received);
+        $this->assertSame(1001, $received[0][0]->id);
+        $this->assertSame(1002, $received[1][0]->id);
+        $this->assertInstanceOf(ZendeskUserData::class, $received[0][1]);
+        $this->assertSame(456, $received[0][1]->id);
+    }
+
     public function test_deferred_validation_throws_on_first_use(): void
     {
         config(['app.debug' => true]);

@@ -92,7 +92,7 @@ class ZendeskComments extends ZendeskResource
                     ->at("search.json?page={$page}")
                     ->as(ZendeskSearchResponse::class)
                     ->withData(['query' => "type:ticket updated>{$cutoff}", 'page' => $page])
-                    ->get(fn () => Http::send(
+                    ->get(fn () => self::decodeSdkResponse(Http::send(
                         $this->sdk(),
                         'search.json',
                         [
@@ -103,7 +103,7 @@ class ZendeskComments extends ZendeskResource
                                 'page' => $page,
                             ],
                         ]
-                    ));
+                    )));
 
                 if ($response->results->isEmpty()) {
                     break;
