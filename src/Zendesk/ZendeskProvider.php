@@ -83,8 +83,9 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             throw new InvalidArgumentException('ZendeskProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
         }
 
-        $client = new ZendeskClient($integration);
+        $client = $this->makeClient($integration);
 
+        $checkpointBase = null;
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
         } else {
@@ -92,22 +93,18 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             if ($parsed === null) {
                 throw new InvalidArgumentException("ZendeskProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
             }
-            $since = $parsed->subHour();
+            $checkpointBase = $parsed;
+            $since = $parsed->copy()->subHour();
         }
 
-        $successCount = 0;
-        $failureCount = 0;
-        $earliestFailureAt = null;
+        $state = new ZendeskSyncState($integration, $checkpointBase);
 
-        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, &$successCount, &$failureCount, &$earliestFailureAt): void {
+        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, $state): void {
             try {
                 ZendeskTicketSynced::dispatch($integration, $ticket, $user);
-                $successCount++;
+                $state->recordSuccess($ticket->updated_at);
             } catch (\Throwable $e) {
-                $failureCount++;
-                if ($earliestFailureAt === null || $ticket->updated_at->isBefore($earliestFailureAt)) {
-                    $earliestFailureAt = $ticket->updated_at;
-                }
+                $state->recordFailure($ticket->updated_at);
 
                 Log::error('ZendeskProvider: Failed processing ticket: '.$e->getMessage(), [
                     'ticket_id' => $ticket->id,
@@ -116,9 +113,9 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             }
         });
 
-        $safeSyncedAt = $this->resolveSyncCursor($earliestFailureAt, $failureCount, $since);
+        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since, $checkpointBase);
 
-        $result = new SyncResult($successCount, $failureCount, $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
+        $result = new SyncResult($state->successCount(), $state->failureCount(), $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         ZendeskSyncCompleted::dispatch($integration, $result);
 
         return $result;
@@ -178,6 +175,11 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         }
     }
 
+    protected function makeClient(Integration $integration): ZendeskClient
+    {
+        return new ZendeskClient($integration);
+    }
+
     private static function parseTimestamp(mixed $value): ?Carbon
     {
         if (! is_string($value) || $value === '') {
@@ -191,14 +193,19 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         }
     }
 
-    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since): Carbon
+    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since, ?Carbon $checkpointBase): Carbon
     {
         if ($earliestFailureAt !== null) {
-            return $earliestFailureAt;
+            $candidate = $earliestFailureAt;
+        } else {
+            // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
+            // failures don't widen the overlap window on each run.
+            $candidate = $failureCount > 0 ? $since->copy()->addHour() : now();
         }
 
-        // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
-        // failures don't widen the overlap window on each run.
-        return $failureCount > 0 ? $since->copy()->addHour() : now();
+        // Clamp to the persisted cursor so a failure on an overlap-window item can't
+        // regress progress. The item still gets retried on the next run because the
+        // 1-hour overlap re-fetches everything from cursor - 1h onward.
+        return $checkpointBase !== null && $checkpointBase->isAfter($candidate) ? $checkpointBase : $candidate;
     }
 }
