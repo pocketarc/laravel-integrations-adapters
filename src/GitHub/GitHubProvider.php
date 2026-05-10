@@ -119,6 +119,7 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
 
         $client = $this->makeClient($integration);
 
+        $checkpointBase = null;
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
         } else {
@@ -126,10 +127,11 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
             if ($parsed === null) {
                 throw new InvalidArgumentException("GitHubProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
             }
-            $since = $parsed->subHour();
+            $checkpointBase = $parsed;
+            $since = $parsed->copy()->subHour();
         }
 
-        $state = new GitHubSyncState($integration);
+        $state = new GitHubSyncState($integration, $checkpointBase);
 
         $client->issues()->since($since, function (array $issue) use ($integration, $state): void {
             $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);

@@ -20,11 +20,16 @@ class GitHubSyncState
 
     private ?Carbon $earliestFailureAt = null;
 
-    private ?Carbon $lastCheckpoint = null;
+    private ?Carbon $lastCheckpoint;
 
     public function __construct(
         private readonly Integration $integration,
-    ) {}
+        ?Carbon $initialCheckpoint = null,
+    ) {
+        // Seed from the existing cursor so items inside the 1-hour overlap
+        // buffer can't regress progress backward.
+        $this->lastCheckpoint = $initialCheckpoint?->copy();
+    }
 
     public function successCount(): int
     {
@@ -50,19 +55,18 @@ class GitHubSyncState
      */
     public function recordSuccess(?Carbon $updatedAt): void
     {
-        $this->successCount++;
+        if ($updatedAt !== null
+            && $this->earliestFailureAt === null
+            && ($this->lastCheckpoint === null || $updatedAt->isAfter($this->lastCheckpoint))
+        ) {
+            // DB write first; on failure the exception bubbles up to the
+            // provider's catch and the item is counted as a failure rather
+            // than both a success and a failure.
+            $this->integration->updateSyncCursor($updatedAt->toIso8601String());
+            $this->lastCheckpoint = $updatedAt;
+        }
 
-        if ($updatedAt === null) {
-            return;
-        }
-        if ($this->earliestFailureAt !== null) {
-            return;
-        }
-        if ($this->lastCheckpoint !== null && ! $updatedAt->isAfter($this->lastCheckpoint)) {
-            return;
-        }
-        $this->lastCheckpoint = $updatedAt;
-        $this->integration->updateSyncCursor($updatedAt->toIso8601String());
+        $this->successCount++;
     }
 
     public function recordFailure(?Carbon $updatedAt): void

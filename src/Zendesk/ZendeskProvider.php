@@ -85,6 +85,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
 
         $client = $this->makeClient($integration);
 
+        $checkpointBase = null;
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
         } else {
@@ -92,10 +93,11 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             if ($parsed === null) {
                 throw new InvalidArgumentException("ZendeskProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
             }
-            $since = $parsed->subHour();
+            $checkpointBase = $parsed;
+            $since = $parsed->copy()->subHour();
         }
 
-        $state = new ZendeskSyncState($integration);
+        $state = new ZendeskSyncState($integration, $checkpointBase);
 
         $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, $state): void {
             try {

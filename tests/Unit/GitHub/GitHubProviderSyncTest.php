@@ -35,7 +35,7 @@ class GitHubProviderSyncTest extends TestCase
 
         $cursorsWritten = [];
         Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && is_string($i->sync_cursor)) {
+            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
                 $cursorsWritten[] = $i->sync_cursor;
             }
         });
@@ -70,7 +70,7 @@ class GitHubProviderSyncTest extends TestCase
 
         $cursorsWritten = [];
         Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && is_string($i->sync_cursor)) {
+            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
                 $cursorsWritten[] = $i->sync_cursor;
             }
         });
@@ -78,6 +78,53 @@ class GitHubProviderSyncTest extends TestCase
         $provider->syncIncremental($integration, null);
 
         $this->assertSame(['2026-01-01T10:00:00+00:00'], $cursorsWritten);
+    }
+
+    public function test_sync_incremental_does_not_regress_cursor_below_the_seeded_value(): void
+    {
+        $integration = $this->createIntegrationModel();
+        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
+
+        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
+            [
+                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T11:30:00Z']),
+                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T12:30:00Z']),
+            ],
+        ]);
+
+        $cursorsWritten = [];
+        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
+            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
+                $cursorsWritten[] = $i->sync_cursor;
+            }
+        });
+
+        $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
+
+        $this->assertSame(['2026-01-01T12:30:00+00:00'], $cursorsWritten);
+    }
+
+    public function test_sync_incremental_does_not_double_count_when_cursor_write_throws(): void
+    {
+        $integration = $this->createIntegrationModel();
+        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
+            [
+                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T10:00:00Z']),
+                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T11:00:00Z']),
+                $this->fakeIssue(['id' => 3, 'number' => 3, 'updated_at' => '2026-01-01T12:00:00Z']),
+            ],
+        ]);
+
+        Integration::saving(function (Integration $i) use ($integration): void {
+            if ($i->id === $integration->id && $i->sync_cursor === '2026-01-01T11:00:00+00:00') {
+                throw new RuntimeException('simulated DB write failure');
+            }
+        });
+
+        $result = $provider->syncIncremental($integration, null);
+
+        $this->assertSame(2, $result->successCount);
+        $this->assertSame(1, $result->failureCount);
     }
 
     private function createIntegrationModel(): Integration
