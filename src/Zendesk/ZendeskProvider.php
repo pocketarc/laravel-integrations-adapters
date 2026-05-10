@@ -113,7 +113,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
             }
         });
 
-        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since);
+        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since, $checkpointBase);
 
         $result = new SyncResult($state->successCount(), $state->failureCount(), $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
         ZendeskSyncCompleted::dispatch($integration, $result);
@@ -193,14 +193,19 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         }
     }
 
-    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since): Carbon
+    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since, ?Carbon $checkpointBase): Carbon
     {
         if ($earliestFailureAt !== null) {
-            return $earliestFailureAt;
+            $candidate = $earliestFailureAt;
+        } else {
+            // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
+            // failures don't widen the overlap window on each run.
+            $candidate = $failureCount > 0 ? $since->copy()->addHour() : now();
         }
 
-        // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
-        // failures don't widen the overlap window on each run.
-        return $failureCount > 0 ? $since->copy()->addHour() : now();
+        // Clamp to the persisted cursor so a failure on an overlap-window item can't
+        // regress progress. The item still gets retried on the next run because the
+        // 1-hour overlap re-fetches everything from cursor - 1h onward.
+        return $checkpointBase !== null && $checkpointBase->isAfter($candidate) ? $checkpointBase : $candidate;
     }
 }

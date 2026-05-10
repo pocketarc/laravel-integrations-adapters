@@ -130,6 +130,36 @@ class ZendeskProviderSyncTest extends TestCase
         $this->assertSame(['2026-01-01T12:30:00+00:00'], $cursorsWritten);
     }
 
+    public function test_sync_result_cursor_does_not_regress_below_the_seeded_value_on_overlap_failure(): void
+    {
+        // Seeded cursor 12:00. The 1-hour overlap fetches from 11:00. The item
+        // at 11:30 fails, so resolveSyncCursor() would otherwise return 11:30
+        // and the core's end-of-sync write would regress the persisted cursor
+        // from 12:00 back to 11:30.
+        $integration = $this->createIntegrationModel();
+        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
+
+        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
+            $this->jsonResponse([
+                'tickets' => [
+                    array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T11:30:00Z']),
+                ],
+                'users' => [],
+                'next_page' => null,
+                'end_of_stream' => true,
+                'count' => 1,
+            ]),
+        ]));
+
+        Event::listen(ZendeskTicketSynced::class, function (): void {
+            throw new RuntimeException('simulated listener failure on overlap-window item');
+        });
+
+        $result = $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
+
+        $this->assertSame('2026-01-01T12:00:00+00:00', $result->cursor);
+    }
+
     public function test_sync_incremental_does_not_double_count_when_cursor_write_throws(): void
     {
         // If updateSyncCursor() throws, the exception propagates up to the

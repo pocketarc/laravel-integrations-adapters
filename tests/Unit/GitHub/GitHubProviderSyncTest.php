@@ -104,6 +104,26 @@ class GitHubProviderSyncTest extends TestCase
         $this->assertSame(['2026-01-01T12:30:00+00:00'], $cursorsWritten);
     }
 
+    public function test_sync_result_cursor_does_not_regress_below_the_seeded_value_on_overlap_failure(): void
+    {
+        $integration = $this->createIntegrationModel();
+        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
+
+        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
+            [
+                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T11:30:00Z']),
+            ],
+        ]);
+
+        Event::listen(GitHubIssueSynced::class, function (): void {
+            throw new RuntimeException('simulated listener failure on overlap-window item');
+        });
+
+        $result = $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
+
+        $this->assertSame('2026-01-01T12:00:00+00:00', $result->cursor);
+    }
+
     public function test_sync_incremental_does_not_double_count_when_cursor_write_throws(): void
     {
         $integration = $this->createIntegrationModel();
