@@ -29,7 +29,7 @@ abstract class ZendeskResource
     /**
      * `Zendesk\API\Http::send()` calls `json_decode($body)` without `assoc=true`,
      * so it returns `stdClass` trees. Wrap those callsites with this helper to
-     * hand `Spatie\LaravelData\Data::from()` an array, which is what its
+     * hand `Spatie\LaravelData\Data::from()` an array, the shape its
      * `Collection<int, T>` validation rules expect.
      */
     protected static function decodeSdkResponse(mixed $response): mixed
