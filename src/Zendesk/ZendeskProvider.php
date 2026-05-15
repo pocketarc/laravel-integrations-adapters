@@ -6,22 +6,22 @@ namespace Integrations\Adapters\Zendesk;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
-use Integrations\Adapters\Zendesk\Events\ZendeskSyncCompleted;
 use Integrations\Adapters\Zendesk\Events\ZendeskTicketSynced;
-use Integrations\Adapters\Zendesk\Events\ZendeskTicketSyncFailed;
+use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
-use Integrations\Sync\SyncResult;
+use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 
 class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
+    use ReducesCheckpointsByMax;
+
     #[\Override]
     public function name(): string
     {
@@ -71,54 +71,51 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     }
 
     #[\Override]
-    public function sync(Integration $integration): SyncResult
+    public function sync(Integration $integration, SyncSession $session): void
     {
-        return $this->syncIncremental($integration, null);
+        // A full re-sync ignores the cursor and enumerates from the epoch.
+        // The framework only calls this for non-incremental providers; for
+        // Zendesk it's a fallback, since the provider is HasIncrementalSync.
+        $this->enumerate($integration, $session, Carbon::createFromTimestamp(0));
     }
 
     #[\Override]
-    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+    public function syncIncremental(Integration $integration, SyncSession $session): void
     {
-        if ($cursor !== null && ! is_string($cursor)) {
-            throw new InvalidArgumentException('ZendeskProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
-        }
+        $cursor = $session->cursor();
 
-        $client = $this->makeClient($integration);
-
-        $checkpointBase = null;
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
         } else {
+            if (! is_string($cursor)) {
+                throw new InvalidArgumentException('ZendeskProvider::syncIncremental() expects the cursor to be a string or null, got '.get_debug_type($cursor).'.');
+            }
+
             $parsed = self::parseTimestamp($cursor);
             if ($parsed === null) {
                 throw new InvalidArgumentException("ZendeskProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
             }
-            $checkpointBase = $parsed;
-            $since = $parsed->copy()->subHour();
+
+            // Subtract a 1-hour overlap buffer to catch tickets updated between
+            // runs. The framework's cursor advance is monotonic, so
+            // re-presenting items inside that window can't regress progress.
+            $since = $parsed->subHour();
         }
 
-        $state = new ZendeskSyncState($integration, $checkpointBase);
+        $this->enumerate($integration, $session, $since);
+    }
 
-        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, $state): void {
-            try {
-                ZendeskTicketSynced::dispatch($integration, $ticket, $user);
-                $state->recordSuccess($ticket->updated_at);
-            } catch (\Throwable $e) {
-                $state->recordFailure($ticket->updated_at);
+    private function enumerate(Integration $integration, SyncSession $session, Carbon $since): void
+    {
+        $client = $this->makeClient($integration);
 
-                Log::error('ZendeskProvider: Failed processing ticket: '.$e->getMessage(), [
-                    'ticket_id' => $ticket->id,
-                ]);
-                ZendeskTicketSyncFailed::dispatch($integration, (string) $ticket->id, $e);
-            }
+        $client->tickets()->since($since, function (ZendeskTicketData $ticket, ?ZendeskUserData $user) use ($integration, $session): void {
+            $session->dispatch(
+                new ZendeskTicketSynced($integration, $ticket, $user),
+                checkpointValue: $ticket->updated_at->toIso8601String(),
+                externalId: (string) $ticket->id,
+            );
         });
-
-        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since, $checkpointBase);
-
-        $result = new SyncResult($state->successCount(), $state->failureCount(), $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
-        ZendeskSyncCompleted::dispatch($integration, $result);
-
-        return $result;
     }
 
     /**
@@ -191,21 +188,5 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
         } catch (\Throwable) {
             return null;
         }
-    }
-
-    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since, ?Carbon $checkpointBase): Carbon
-    {
-        if ($earliestFailureAt !== null) {
-            $candidate = $earliestFailureAt;
-        } else {
-            // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
-            // failures don't widen the overlap window on each run.
-            $candidate = $failureCount > 0 ? $since->copy()->addHour() : now();
-        }
-
-        // Clamp to the persisted cursor so a failure on an overlap-window item can't
-        // regress progress. The item still gets retried on the next run because the
-        // 1-hour overlap re-fetches everything from cursor - 1h onward.
-        return $checkpointBase !== null && $checkpointBase->isAfter($candidate) ? $checkpointBase : $candidate;
     }
 }

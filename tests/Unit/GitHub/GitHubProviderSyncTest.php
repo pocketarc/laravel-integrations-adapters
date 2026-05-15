@@ -9,142 +9,81 @@ use Github\Client as GithubSdkClient;
 use Github\HttpClient\Builder;
 use GuzzleHttp\Psr7\Response;
 use Http\Mock\Client as MockHttpClient;
-use Illuminate\Support\Facades\Event;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
 use Integrations\Adapters\GitHub\GitHubClient;
 use Integrations\Adapters\GitHub\GitHubProvider;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Models\Integration;
+use Integrations\Sync\SyncItemEvent;
 use Integrations\Testing\CreatesIntegration;
-use RuntimeException;
+use Integrations\Testing\FakeSyncSession;
 
 class GitHubProviderSyncTest extends TestCase
 {
     use CreatesIntegration;
 
-    public function test_sync_incremental_checkpoints_cursor_per_successful_issue(): void
+    public function test_sync_incremental_dispatches_each_issue_to_the_session(): void
     {
         $integration = $this->createIntegrationModel();
         $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
             [
                 $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T10:00:00Z']),
-                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T11:00:00Z']),
-                $this->fakeIssue(['id' => 3, 'number' => 3, 'updated_at' => '2026-01-01T12:00:00Z']),
+                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T12:00:00Z']),
             ],
         ]);
 
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
+        $session = new FakeSyncSession($integration);
+        $provider->syncIncremental($integration, $session);
 
-        $provider->syncIncremental($integration, null);
+        $session->assertDispatchedCount(2);
+        $session->assertDispatched(
+            GitHubIssueSynced::class,
+            fn (SyncItemEvent $event, mixed $checkpoint, ?string $externalId): bool => $event instanceof GitHubIssueSynced
+                && $event->issue->number === 1
+                && $checkpoint === '2026-01-01T10:00:00+00:00'
+                && $externalId === '1',
+        );
+        $session->assertDispatched(
+            GitHubIssueSynced::class,
+            fn (SyncItemEvent $event, mixed $checkpoint, ?string $externalId): bool => $event instanceof GitHubIssueSynced
+                && $event->issue->number === 2
+                && $checkpoint === '2026-01-01T12:00:00+00:00'
+                && $externalId === '2',
+        );
+    }
 
-        $this->assertSame([
-            '2026-01-01T10:00:00+00:00',
-            '2026-01-01T11:00:00+00:00',
+    public function test_sync_incremental_scopes_the_fetch_by_the_session_cursor(): void
+    {
+        $integration = $this->createIntegrationModel();
+        $integration->updateSyncCursor('2026-06-01T12:00:00+00:00');
+
+        $mockHttp = new MockHttpClient;
+        $provider = $this->makeProviderWithMockedSdk($mockHttp, [[]]);
+
+        $session = new FakeSyncSession($integration);
+        $provider->syncIncremental($integration, $session);
+
+        $session->assertNothingDispatched();
+
+        // The GitHub issues request scopes by `since` = cursor - 1h.
+        $requests = $mockHttp->getRequests();
+        $this->assertNotEmpty($requests);
+        $this->assertStringContainsString('2026-06-01T11%3A00%3A00', $requests[0]->getUri()->getQuery());
+    }
+
+    public function test_reduce_checkpoints_returns_the_latest_checkpoint(): void
+    {
+        $provider = new GitHubProvider;
+
+        $this->assertSame(
             '2026-01-01T12:00:00+00:00',
-        ], $cursorsWritten);
-    }
-
-    public function test_sync_incremental_stops_checkpointing_after_a_failure(): void
-    {
-        $integration = $this->createIntegrationModel();
-        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
-            [
-                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T10:00:00Z']),
-                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T11:00:00Z']),
-                $this->fakeIssue(['id' => 3, 'number' => 3, 'updated_at' => '2026-01-01T12:00:00Z']),
-            ],
-        ]);
-
-        $count = 0;
-        Event::listen(GitHubIssueSynced::class, function () use (&$count): void {
-            $count++;
-            if ($count === 2) {
-                throw new RuntimeException('simulated listener failure');
-            }
-        });
-
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
-
-        $provider->syncIncremental($integration, null);
-
-        $this->assertSame(['2026-01-01T10:00:00+00:00'], $cursorsWritten);
-    }
-
-    public function test_sync_incremental_does_not_regress_cursor_below_the_seeded_value(): void
-    {
-        $integration = $this->createIntegrationModel();
-        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
-
-        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
-            [
-                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T11:30:00Z']),
-                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T12:30:00Z']),
-            ],
-        ]);
-
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
-
-        $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
-
-        $this->assertSame(['2026-01-01T12:30:00+00:00'], $cursorsWritten);
-    }
-
-    public function test_sync_result_cursor_does_not_regress_below_the_seeded_value_on_overlap_failure(): void
-    {
-        $integration = $this->createIntegrationModel();
-        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
-
-        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
-            [
-                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T11:30:00Z']),
-            ],
-        ]);
-
-        Event::listen(GitHubIssueSynced::class, function (): void {
-            throw new RuntimeException('simulated listener failure on overlap-window item');
-        });
-
-        $result = $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
-
-        $this->assertSame('2026-01-01T12:00:00+00:00', $result->cursor);
-    }
-
-    public function test_sync_incremental_does_not_double_count_when_cursor_write_throws(): void
-    {
-        $integration = $this->createIntegrationModel();
-        $provider = $this->makeProviderWithMockedSdk(new MockHttpClient, [
-            [
-                $this->fakeIssue(['id' => 1, 'number' => 1, 'updated_at' => '2026-01-01T10:00:00Z']),
-                $this->fakeIssue(['id' => 2, 'number' => 2, 'updated_at' => '2026-01-01T11:00:00Z']),
-                $this->fakeIssue(['id' => 3, 'number' => 3, 'updated_at' => '2026-01-01T12:00:00Z']),
-            ],
-        ]);
-
-        Integration::saving(function (Integration $i) use ($integration): void {
-            if ($i->id === $integration->id && $i->sync_cursor === '2026-01-01T11:00:00+00:00') {
-                throw new RuntimeException('simulated DB write failure');
-            }
-        });
-
-        $result = $provider->syncIncremental($integration, null);
-
-        $this->assertSame(2, $result->successCount);
-        $this->assertSame(1, $result->failureCount);
+            $provider->reduceCheckpoints([
+                '2026-01-01T10:00:00+00:00',
+                '2026-01-01T12:00:00+00:00',
+                '2026-01-01T11:00:00+00:00',
+            ]),
+        );
+        $this->assertNull($provider->reduceCheckpoints([]));
     }
 
     private function createIntegrationModel(): Integration
@@ -166,8 +105,6 @@ class GitHubProviderSyncTest extends TestCase
             $mockHttp->addResponse($this->jsonResponse($page));
         }
 
-        // GitHubIssues::since() loops while count($issues) === $perPage (100), so
-        // a non-full final page terminates the loop without an extra request.
         $builder = new Builder($mockHttp);
         $sdk = new GithubSdkClient($builder);
         $sdk->authenticate('ghp_fake123', null, AuthMethod::ACCESS_TOKEN);
