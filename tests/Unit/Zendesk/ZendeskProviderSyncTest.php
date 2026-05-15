@@ -8,219 +8,98 @@ use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
-use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Carbon;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Adapters\Zendesk\Events\ZendeskTicketSynced;
 use Integrations\Adapters\Zendesk\ZendeskClient;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
 use Integrations\Models\Integration;
+use Integrations\Sync\SyncItemEvent;
 use Integrations\Testing\CreatesIntegration;
-use RuntimeException;
+use Integrations\Testing\FakeSyncSession;
 use Zendesk\API\HttpClient as ZendeskAPI;
 
 class ZendeskProviderSyncTest extends TestCase
 {
     use CreatesIntegration;
 
-    public function test_sync_incremental_checkpoints_cursor_per_successful_ticket(): void
+    public function test_sync_incremental_dispatches_each_ticket_to_the_session(): void
     {
         $integration = $this->createIntegrationModel();
         $provider = $this->makeProviderWithMockedSdk(new MockHandler([
             $this->jsonResponse([
                 'tickets' => [
                     array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T10:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1002, 'updated_at' => '2026-01-01T11:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1003, 'updated_at' => '2026-01-01T12:00:00Z']),
+                    array_merge($this->fakeTicket(), ['id' => 1002, 'updated_at' => '2026-01-01T12:00:00Z']),
                 ],
                 'users' => [],
                 'next_page' => null,
                 'end_of_stream' => true,
-                'count' => 3,
+                'count' => 2,
             ]),
         ]));
 
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
+        $session = new FakeSyncSession($integration);
+        $provider->syncIncremental($integration, $session);
 
-        $provider->syncIncremental($integration, null);
+        $session->assertDispatchedCount(2);
+        $session->assertDispatched(
+            ZendeskTicketSynced::class,
+            fn (SyncItemEvent $event, mixed $checkpoint, ?string $externalId): bool => $event instanceof ZendeskTicketSynced
+                && $event->ticket->id === 1001
+                && $checkpoint === '2026-01-01T10:00:00+00:00'
+                && $externalId === '1001',
+        );
+        $session->assertDispatched(
+            ZendeskTicketSynced::class,
+            fn (SyncItemEvent $event, mixed $checkpoint, ?string $externalId): bool => $event instanceof ZendeskTicketSynced
+                && $event->ticket->id === 1002
+                && $checkpoint === '2026-01-01T12:00:00+00:00'
+                && $externalId === '1002',
+        );
+    }
 
-        $this->assertSame([
-            '2026-01-01T10:00:00+00:00',
-            '2026-01-01T11:00:00+00:00',
+    public function test_sync_incremental_scopes_the_fetch_by_the_session_cursor(): void
+    {
+        // A seeded cursor means syncIncremental fetches from cursor - 1h.
+        $integration = $this->createIntegrationModel();
+        $integration->updateSyncCursor('2026-06-01T12:00:00+00:00');
+
+        $mockHandler = new MockHandler([
+            $this->jsonResponse([
+                'tickets' => [],
+                'users' => [],
+                'next_page' => null,
+                'end_of_stream' => true,
+                'count' => 0,
+            ]),
+        ]);
+        $provider = $this->makeProviderWithMockedSdk($mockHandler);
+
+        $session = new FakeSyncSession($integration);
+        $provider->syncIncremental($integration, $session);
+
+        $session->assertNothingDispatched();
+
+        $expectedStart = Carbon::parse('2026-06-01T11:00:00+00:00')->getTimestamp();
+        $lastRequest = $mockHandler->getLastRequest();
+        $this->assertNotNull($lastRequest);
+        $this->assertStringContainsString("start_time={$expectedStart}", $lastRequest->getUri()->getQuery());
+    }
+
+    public function test_reduce_checkpoints_returns_the_latest_checkpoint(): void
+    {
+        $provider = new ZendeskProvider;
+
+        $this->assertSame(
             '2026-01-01T12:00:00+00:00',
-        ], $cursorsWritten);
-    }
-
-    public function test_sync_incremental_stops_checkpointing_after_a_failure(): void
-    {
-        $integration = $this->createIntegrationModel();
-        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
-            $this->jsonResponse([
-                'tickets' => [
-                    array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T10:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1002, 'updated_at' => '2026-01-01T11:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1003, 'updated_at' => '2026-01-01T12:00:00Z']),
-                ],
-                'users' => [],
-                'next_page' => null,
-                'end_of_stream' => true,
-                'count' => 3,
+            $provider->reduceCheckpoints([
+                '2026-01-01T10:00:00+00:00',
+                '2026-01-01T12:00:00+00:00',
+                '2026-01-01T11:00:00+00:00',
             ]),
-        ]));
-
-        $count = 0;
-        Event::listen(ZendeskTicketSynced::class, function () use (&$count): void {
-            $count++;
-            if ($count === 2) {
-                throw new RuntimeException('simulated listener failure');
-            }
-        });
-
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
-
-        $provider->syncIncremental($integration, null);
-
-        // The first ticket succeeded so its cursor was checkpointed.
-        // The second threw, so no checkpoint. The third succeeded but came
-        // after the failure, so it must NOT advance the cursor past the
-        // known-bad ticket.
-        $this->assertSame(['2026-01-01T10:00:00+00:00'], $cursorsWritten);
-    }
-
-    public function test_sync_incremental_does_not_regress_cursor_below_the_seeded_value(): void
-    {
-        // Pre-seed the cursor. The 1-hour overlap buffer means the iterator will
-        // surface tickets older than this; without seeding lastCheckpoint from
-        // the cursor, those older items would write a cursor older than what's
-        // already persisted, regressing progress.
-        $integration = $this->createIntegrationModel();
-        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
-
-        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
-            $this->jsonResponse([
-                'tickets' => [
-                    array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T11:30:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1002, 'updated_at' => '2026-01-01T12:30:00Z']),
-                ],
-                'users' => [],
-                'next_page' => null,
-                'end_of_stream' => true,
-                'count' => 2,
-            ]),
-        ]));
-
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
-
-        $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
-
-        $this->assertSame(['2026-01-01T12:30:00+00:00'], $cursorsWritten);
-    }
-
-    public function test_sync_result_cursor_does_not_regress_below_the_seeded_value_on_overlap_failure(): void
-    {
-        // Seeded cursor 12:00. The 1-hour overlap fetches from 11:00. The item
-        // at 11:30 fails, so resolveSyncCursor() would otherwise return 11:30
-        // and the core's end-of-sync write would regress the persisted cursor
-        // from 12:00 back to 11:30.
-        $integration = $this->createIntegrationModel();
-        $integration->updateSyncCursor('2026-01-01T12:00:00+00:00');
-
-        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
-            $this->jsonResponse([
-                'tickets' => [
-                    array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T11:30:00Z']),
-                ],
-                'users' => [],
-                'next_page' => null,
-                'end_of_stream' => true,
-                'count' => 1,
-            ]),
-        ]));
-
-        Event::listen(ZendeskTicketSynced::class, function (): void {
-            throw new RuntimeException('simulated listener failure on overlap-window item');
-        });
-
-        $result = $provider->syncIncremental($integration, '2026-01-01T12:00:00+00:00');
-
-        $this->assertSame('2026-01-01T12:00:00+00:00', $result->cursor);
-    }
-
-    public function test_sync_incremental_does_not_double_count_when_cursor_write_throws(): void
-    {
-        // If updateSyncCursor() throws, the exception propagates up to the
-        // provider's catch and the item is recorded as a failure. Without the
-        // fix, successCount has already been incremented, so the item ends up
-        // in both buckets.
-        $integration = $this->createIntegrationModel();
-        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
-            $this->jsonResponse([
-                'tickets' => [
-                    array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T10:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1002, 'updated_at' => '2026-01-01T11:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1003, 'updated_at' => '2026-01-01T12:00:00Z']),
-                ],
-                'users' => [],
-                'next_page' => null,
-                'end_of_stream' => true,
-                'count' => 3,
-            ]),
-        ]));
-
-        Integration::saving(function (Integration $i) use ($integration): void {
-            if ($i->id === $integration->id && $i->sync_cursor === '2026-01-01T11:00:00+00:00') {
-                throw new RuntimeException('simulated DB write failure');
-            }
-        });
-
-        $result = $provider->syncIncremental($integration, null);
-
-        $this->assertSame(2, $result->successCount);
-        $this->assertSame(1, $result->failureCount);
-    }
-
-    public function test_sync_incremental_skips_checkpoint_when_updated_at_does_not_advance(): void
-    {
-        // Two tickets with identical updated_at; the second should not trigger
-        // a redundant write. Defends against re-writing the same cursor value.
-        $integration = $this->createIntegrationModel();
-        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
-            $this->jsonResponse([
-                'tickets' => [
-                    array_merge($this->fakeTicket(), ['id' => 1001, 'updated_at' => '2026-01-01T10:00:00Z']),
-                    array_merge($this->fakeTicket(), ['id' => 1002, 'updated_at' => '2026-01-01T10:00:00Z']),
-                ],
-                'users' => [],
-                'next_page' => null,
-                'end_of_stream' => true,
-                'count' => 2,
-            ]),
-        ]));
-
-        $cursorsWritten = [];
-        Integration::updated(function (Integration $i) use ($integration, &$cursorsWritten): void {
-            if ($i->id === $integration->id && $i->wasChanged('sync_cursor') && is_string($i->sync_cursor)) {
-                $cursorsWritten[] = $i->sync_cursor;
-            }
-        });
-
-        $provider->syncIncremental($integration, null);
-
-        $this->assertSame(['2026-01-01T10:00:00+00:00'], $cursorsWritten);
+        );
+        $this->assertNull($provider->reduceCheckpoints([]));
     }
 
     private function createIntegrationModel(): Integration

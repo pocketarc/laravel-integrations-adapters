@@ -9,22 +9,22 @@ use Github\Exception\RuntimeException as GitHubRuntimeException;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
-use Integrations\Adapters\GitHub\Events\GitHubIssueSyncFailed;
-use Integrations\Adapters\GitHub\Events\GitHubSyncCompleted;
+use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\CustomizesRetry;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
-use Integrations\Sync\SyncResult;
+use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 
 class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
+    use ReducesCheckpointsByMax;
+
     #[\Override]
     public function isRetryable(\Throwable $e): ?bool
     {
@@ -105,56 +105,56 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
     }
 
     #[\Override]
-    public function sync(Integration $integration): SyncResult
+    public function sync(Integration $integration, SyncSession $session): void
     {
-        return $this->syncIncremental($integration, null);
+        // A full re-sync ignores the cursor and enumerates from the epoch.
+        // The framework only calls this for non-incremental providers; for
+        // GitHub it's a fallback, since the provider is HasIncrementalSync.
+        $this->enumerate($integration, $session, Carbon::createFromTimestamp(0));
     }
 
     #[\Override]
-    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+    public function syncIncremental(Integration $integration, SyncSession $session): void
     {
-        if ($cursor !== null && ! is_string($cursor)) {
-            throw new InvalidArgumentException('GitHubProvider::syncIncremental() expects $cursor to be a string or null, got '.get_debug_type($cursor).'.');
-        }
+        $cursor = $session->cursor();
 
-        $client = $this->makeClient($integration);
-
-        $checkpointBase = null;
         if ($cursor === null || $cursor === '') {
             $since = Carbon::createFromTimestamp(0);
         } else {
+            if (! is_string($cursor)) {
+                throw new InvalidArgumentException('GitHubProvider::syncIncremental() expects the cursor to be a string or null, got '.get_debug_type($cursor).'.');
+            }
+
             $parsed = self::parseTimestamp($cursor);
             if ($parsed === null) {
                 throw new InvalidArgumentException("GitHubProvider::syncIncremental() received an unparseable cursor: '{$cursor}'.");
             }
-            $checkpointBase = $parsed;
-            $since = $parsed->copy()->subHour();
+
+            // Subtract a 1-hour overlap buffer to catch issues updated between
+            // runs. The framework's cursor advance is monotonic, so
+            // re-presenting items inside that window can't regress progress.
+            $since = $parsed->subHour();
         }
 
-        $state = new GitHubSyncState($integration, $checkpointBase);
+        $this->enumerate($integration, $session, $since);
+    }
 
-        $client->issues()->since($since, function (array $issue) use ($integration, $state): void {
+    private function enumerate(Integration $integration, SyncSession $session, Carbon $since): void
+    {
+        $client = $this->makeClient($integration);
+
+        $client->issues()->since($since, function (array $issue) use ($integration, $session): void {
+            $issueData = GitHubIssueData::from($issue);
             $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);
-            try {
-                $issueData = GitHubIssueData::from($issue);
-                GitHubIssueSynced::dispatch($integration, $issueData);
-                $state->recordSuccess($updatedAt);
-            } catch (\Throwable $e) {
-                $state->recordFailure($updatedAt);
 
-                Log::error('GitHubProvider: Failed processing issue: '.$e->getMessage(), [
-                    'issue_number' => $issue['number'] ?? 'unknown',
-                ]);
-                GitHubIssueSyncFailed::dispatch($integration, $issue, $e);
-            }
+            $session->dispatch(
+                new GitHubIssueSynced($integration, $issueData),
+                checkpointValue: $updatedAt?->toIso8601String(),
+                externalId: array_key_exists('number', $issue) && (is_int($issue['number']) || is_string($issue['number']))
+                    ? (string) $issue['number']
+                    : null,
+            );
         });
-
-        $safeSyncedAt = $this->resolveSyncCursor($state->earliestFailureAt(), $state->failureCount(), $since, $checkpointBase);
-
-        $result = new SyncResult($state->successCount(), $state->failureCount(), $safeSyncedAt, cursor: $safeSyncedAt->toIso8601String());
-        GitHubSyncCompleted::dispatch($integration, $result);
-
-        return $result;
     }
 
     /**
@@ -235,22 +235,5 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
         return str_contains($lower, 'rate limit')
             || str_contains($lower, 'throttl')
             || str_contains($lower, 'abuse');
-    }
-
-    private function resolveSyncCursor(?Carbon $earliestFailureAt, int $failureCount, Carbon $since, ?Carbon $checkpointBase): Carbon
-    {
-        if ($earliestFailureAt !== null) {
-            $candidate = $earliestFailureAt;
-        } else {
-            // Don't advance cursor past unprocessed failures without timestamps.
-            // Add back the 1-hour buffer that syncIncremental subtracted, so repeated
-            // failures don't widen the overlap window on each run.
-            $candidate = $failureCount > 0 ? $since->copy()->addHour() : Carbon::now();
-        }
-
-        // Clamp to the persisted cursor so a failure on an overlap-window item can't
-        // regress progress. The item still gets retried on the next run because the
-        // 1-hour overlap re-fetches everything from cursor - 1h onward.
-        return $checkpointBase !== null && $checkpointBase->isAfter($candidate) ? $checkpointBase : $candidate;
     }
 }

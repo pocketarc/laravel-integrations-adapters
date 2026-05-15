@@ -57,7 +57,7 @@ All write methods (`issues()->create`, `close`, `reopen`, `comments()->add`) acc
 
 ## Sync
 
-The adapter syncs issues via `$client->issues()->since()`. Each issue dispatches a `GitHubIssueSynced` event. Failed items dispatch `GitHubIssueSyncFailed` and don't advance the sync cursor past them. After the sync completes, `GitHubSyncCompleted` fires with the `SyncResult`.
+The adapter syncs issues via `$client->issues()->since()`. For each issue it calls `$session->dispatch()` with a `GitHubIssueSynced` event. The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every issue's job has succeeded. Listeners for `GitHubIssueSynced` must not implement `ShouldQueue` (see the core [Scheduled syncs](https://laravel-integrations.pocketarc.com/features/scheduled-syncs) guide).
 
 First sync (null cursor) fetches all issues from timestamp 0. Set `sync_cursor` on the integration to control the starting point:
 
@@ -65,9 +65,7 @@ First sync (null cursor) fetches all issues from timestamp 0. Set `sync_cursor` 
 $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 ```
 
-Every sync (including the first one with a seeded cursor) subtracts a 1-hour buffer from the cursor. This buffer catches items updated between syncs. Consumers should use `updateOrCreate()` in their event listeners since overlap is expected.
-
-The provider checkpoints `sync_cursor` per successful issue, so a SIGKILL or queue-worker timeout mid-backfill leaves the cursor at the last processed item rather than back at the original `$since`. The next dispatch resumes from there. Checkpointing pauses once a failure is recorded so the cursor never advances past a known-bad issue; `resolveSyncCursor()` then rolls the cursor back to the earliest failure at end-of-run.
+Every incremental sync subtracts a 1-hour buffer from the cursor to catch issues updated between runs. The framework's cursor advance is monotonic, so re-presenting items inside that window can't regress progress. Consumers should still use `updateOrCreate()` in their listeners since overlap is expected.
 
 Defaults: 5-minute sync interval, 60 requests/minute rate limit.
 
