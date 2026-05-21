@@ -15,6 +15,7 @@ use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 
@@ -143,9 +144,10 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
     }
 
     #[\Override]
-    public function defaultRateLimit(): int
+    public function defaultRateLimit(): RateLimit
     {
-        return 100;
+        // Zendesk enforces its per-minute limit as a rolling window.
+        return RateLimit::perMinute(100)->sliding();
     }
 
     #[\Override]

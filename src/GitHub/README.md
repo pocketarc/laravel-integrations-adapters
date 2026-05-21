@@ -67,7 +67,7 @@ $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 
 Every incremental sync subtracts a 1-hour buffer from the cursor to catch issues updated between runs. The framework's cursor advance is monotonic, so re-presenting items inside that window can't regress progress. Consumers should still use `updateOrCreate()` in their listeners since overlap is expected.
 
-Defaults: 5-minute sync interval, 60 requests/minute rate limit.
+Defaults: 5-minute sync interval, a 5,000-requests/hour rate limit (GitHub's authenticated budget), enforced as a fixed window.
 
 ## Data classes
 

@@ -13,6 +13,7 @@ use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Enums\RateLimitWindow;
 
 class GitHubProviderTest extends TestCase
 {
@@ -84,9 +85,11 @@ class GitHubProviderTest extends TestCase
 
     public function test_default_rate_limit(): void
     {
-        $provider = new GitHubProvider;
+        $limit = (new GitHubProvider)->defaultRateLimit();
 
-        $this->assertSame(60, $provider->defaultRateLimit());
+        $this->assertSame(5000, $limit->limit);
+        $this->assertSame(3600, $limit->windowSeconds);
+        $this->assertSame(RateLimitWindow::Fixed, $limit->window);
     }
 
     public function test_sensitive_fields_return_arrays(): void
