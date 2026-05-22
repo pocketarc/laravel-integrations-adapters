@@ -18,6 +18,7 @@ use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Models\Integration;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 
@@ -182,9 +183,11 @@ class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalS
     }
 
     #[\Override]
-    public function defaultRateLimit(): int
+    public function defaultRateLimit(): RateLimit
     {
-        return 60;
+        // GitHub's authenticated REST budget: 5,000 requests/hour, a fixed
+        // window that resets at X-RateLimit-Reset.
+        return RateLimit::perHour(5000);
     }
 
     #[\Override]

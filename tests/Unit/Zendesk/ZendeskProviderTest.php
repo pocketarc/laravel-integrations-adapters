@@ -13,6 +13,7 @@ use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Enums\RateLimitWindow;
 
 class ZendeskProviderTest extends TestCase
 {
@@ -86,9 +87,11 @@ class ZendeskProviderTest extends TestCase
 
     public function test_default_rate_limit(): void
     {
-        $provider = new ZendeskProvider;
+        $limit = (new ZendeskProvider)->defaultRateLimit();
 
-        $this->assertSame(100, $provider->defaultRateLimit());
+        $this->assertSame(100, $limit->limit);
+        $this->assertSame(60, $limit->windowSeconds);
+        $this->assertSame(RateLimitWindow::Sliding, $limit->window);
     }
 
     public function test_sensitive_fields_return_arrays(): void
