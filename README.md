@@ -14,21 +14,16 @@ Adapter implementations for [`pocketarc/laravel-integrations`](https://github.co
 composer require pocketarc/laravel-integrations-adapters
 ```
 
-Register adapters in `config/integrations.php`:
-
-```php
-'providers' => [
-    'zendesk' => \Integrations\Adapters\Zendesk\ZendeskProvider::class,
-    'github'  => \Integrations\Adapters\GitHub\GitHubProvider::class,
-],
-```
+The service provider auto-registers all four adapters; no `config/integrations.php` edits required.
 
 ## Available adapters
 
-| Adapter                | Docs                            |
-|------------------------|---------------------------------|
-| [GitHub](src/GitHub)   | [README](src/GitHub/README.md)  |
-| [Zendesk](src/Zendesk) | [README](src/Zendesk/README.md) |
+| Adapter  | Docs                                                                                                 |
+|----------|------------------------------------------------------------------------------------------------------|
+| GitHub   | [integrations.pocketarc.com/adapters/github](https://integrations.pocketarc.com/adapters/github)     |
+| Postmark | [integrations.pocketarc.com/adapters/postmark](https://integrations.pocketarc.com/adapters/postmark) |
+| Stripe   | [integrations.pocketarc.com/adapters/stripe](https://integrations.pocketarc.com/adapters/stripe)     |
+| Zendesk  | [integrations.pocketarc.com/adapters/zendesk](https://integrations.pocketarc.com/adapters/zendesk)   |
 
 ## License
 
