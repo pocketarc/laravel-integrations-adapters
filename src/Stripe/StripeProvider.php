@@ -6,14 +6,19 @@ namespace Integrations\Adapters\Stripe;
 
 use Illuminate\Http\Request;
 use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\SupportsIdempotency;
+use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Safe\Exceptions\JsonException;
+use Stripe\Exception\ApiConnectionException;
+use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Webhook;
+use Throwable;
 
 use function Safe\json_decode;
 
@@ -28,8 +33,28 @@ use function Safe\json_decode;
  * its resource accessors (`->paymentIntents()`, `->refunds()`, etc.) rather
  * than reaching into `\Stripe\*` types.
  */
-class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider, SupportsIdempotency
+class StripeProvider implements ClassifiesFailures, HandlesWebhooks, HasHealthCheck, IntegrationProvider, SupportsIdempotency
 {
+    #[\Override]
+    public function classifyFailure(Throwable $e): ?FailureClass
+    {
+        // A connection-level error means the dependency is unreachable; the
+        // SDK carries no HTTP status here, so core can't see it.
+        if ($e instanceof ApiConnectionException) {
+            return FailureClass::Upstream;
+        }
+
+        // Every other Stripe error carries an HTTP status; map it directly so
+        // 429s classify as throttles rather than relying on core duck-typing.
+        if ($e instanceof ApiErrorException) {
+            $status = $e->getHttpStatus();
+
+            return $status !== null ? FailureClass::fromStatus($status) : FailureClass::Unknown;
+        }
+
+        return null;
+    }
+
     #[\Override]
     public function name(): string
     {
@@ -157,7 +182,7 @@ class StripeProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProv
             (new StripeClient($integration))->getSdkClient()->balance->retrieve();
 
             return true;
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }

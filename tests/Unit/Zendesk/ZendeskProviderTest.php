@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Tests\Unit\Zendesk;
 
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Psr7\Request;
 use Illuminate\Support\Facades\Http;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Adapters\Zendesk\ZendeskCredentials;
 use Integrations\Adapters\Zendesk\ZendeskMetadata;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Enums\FailureClass;
 use Integrations\Enums\RateLimitWindow;
+use RuntimeException;
 
 class ZendeskProviderTest extends TestCase
 {
@@ -25,6 +30,20 @@ class ZendeskProviderTest extends TestCase
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
         $this->assertInstanceOf(HasIncrementalSync::class, $provider);
         $this->assertInstanceOf(RedactsRequestData::class, $provider);
+        $this->assertInstanceOf(ClassifiesFailures::class, $provider);
+    }
+
+    public function test_classify_failure(): void
+    {
+        $provider = new ZendeskProvider;
+
+        // The Zendesk SDK wraps the Guzzle RequestException (which core reads
+        // off the chain), so the provider only maps a bare connection error,
+        // which has no status, to an upstream fault.
+        $this->assertSame(FailureClass::Upstream, $provider->classifyFailure(new ConnectException('refused', new Request('GET', 'https://x.zendesk.com'))));
+
+        // Everything else defers to the core classifier.
+        $this->assertNull($provider->classifyFailure(new RuntimeException('mystery')));
     }
 
     public function test_name(): void

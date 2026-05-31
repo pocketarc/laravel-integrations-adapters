@@ -4,24 +4,42 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Zendesk;
 
+use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
 use Integrations\Adapters\Zendesk\Events\ZendeskTicketSynced;
 use Integrations\Concerns\ReducesCheckpointsByMax;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
+use Throwable;
 
-class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
+class ZendeskProvider implements ClassifiesFailures, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
     use ReducesCheckpointsByMax;
+
+    #[\Override]
+    public function classifyFailure(Throwable $e): ?FailureClass
+    {
+        // The Zendesk SDK wraps the Guzzle RequestException as the previous
+        // exception, which core's chain-walking status extraction already
+        // reads, so 4xx/5xx/429 are deferred to the default classifier. A bare
+        // connection error has no status, so map it to an upstream fault here.
+        if ($e instanceof ConnectException) {
+            return FailureClass::Upstream;
+        }
+
+        return null;
+    }
 
     #[\Override]
     public function name(): string
@@ -169,7 +187,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
                 ->get("{$baseUrl}/api/v2/users/me.json");
 
             return $response->successful();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
@@ -187,7 +205,7 @@ class ZendeskProvider implements HasHealthCheck, HasIncrementalSync, Integration
 
         try {
             return Carbon::createFromFormat('Y-m-d\TH:i:sP', $value);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }
