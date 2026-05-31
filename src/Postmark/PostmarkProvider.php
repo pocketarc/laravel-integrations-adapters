@@ -160,10 +160,14 @@ class PostmarkProvider implements ClassifiesFailures, HandlesWebhooks, HasHealth
         $server = $this->makeClient($integration)->server()->retrieve();
 
         $id = $server['ID'] ?? null;
+        if (! is_int($id) && ! is_string($id)) {
+            throw new RuntimeException('Postmark GET /server returned no usable server id; got '.get_debug_type($id).'.');
+        }
+
         $name = $server['Name'] ?? null;
 
         return new AuthenticatedUser(
-            id: is_int($id) || is_string($id) ? (string) $id : '',
+            id: (string) $id,
             username: null,
             name: is_string($name) ? $name : null,
             email: null,
