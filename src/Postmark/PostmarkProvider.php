@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Postmark;
 
+use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -24,11 +25,14 @@ use Integrations\Adapters\Postmark\Events\PostmarkOpenReceived;
 use Integrations\Adapters\Postmark\Events\PostmarkSpamComplaintReceived;
 use Integrations\Adapters\Postmark\Events\PostmarkSubscriptionChangeReceived;
 use Integrations\Adapters\Postmark\Events\PostmarkWebhookReceived;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use RuntimeException;
+use Throwable;
 
 /**
  * Postmark integration provider. Three jobs:
@@ -47,8 +51,22 @@ use RuntimeException;
  *    integrations should call `useForMail()` per request to swap which
  *    one is active.
  */
-class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationProvider
+class PostmarkProvider implements ClassifiesFailures, HandlesWebhooks, HasHealthCheck, IntegrationProvider
 {
+    #[\Override]
+    public function classifyFailure(Throwable $e): ?FailureClass
+    {
+        // A connection-level error carries no HTTP status, so core can't see
+        // it; map it to an upstream fault. The Postmark SDK exposes the status
+        // via getHttpStatusCode(), which core's duck-typing already reads, so
+        // 4xx/5xx/429 are deferred to the default classifier.
+        if ($e instanceof ConnectException) {
+            return FailureClass::Upstream;
+        }
+
+        return null;
+    }
+
     #[\Override]
     public function name(): string
     {
@@ -124,7 +142,7 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
                 ->get('https://api.postmarkapp.com/server');
 
             return $response->successful();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
@@ -259,7 +277,7 @@ class PostmarkProvider implements HandlesWebhooks, HasHealthCheck, IntegrationPr
                 ->forProvider('postmark')
                 ->active()
                 ->get();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return;
         }
 

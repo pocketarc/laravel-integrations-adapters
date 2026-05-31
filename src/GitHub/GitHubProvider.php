@@ -12,39 +12,56 @@ use Illuminate\Support\Facades\Http;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
 use Integrations\Concerns\ReducesCheckpointsByMax;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\CustomizesRetry;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 
-class GitHubProvider implements CustomizesRetry, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
+class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
 {
     use ReducesCheckpointsByMax;
 
     #[\Override]
-    public function isRetryable(\Throwable $e): ?bool
+    public function classifyFailure(\Throwable $e): ?FailureClass
     {
+        // Hitting the hourly budget, or the secondary 403 rate limit, means
+        // GitHub is healthy and throttling us — not an upstream fault.
         if ($e instanceof ApiLimitExceedException) {
-            return true;
+            return FailureClass::Throttle;
         }
 
         if ($e instanceof ConnectException) {
-            return true;
+            return FailureClass::Upstream;
         }
 
         if ($e instanceof GitHubRuntimeException) {
             $code = $e->getCode();
 
-            return $code === 429
-                || ($code === 403 && self::isRateLimitMessage($e->getMessage()))
-                || ($code >= 500 && $code < 600);
+            if ($code === 429 || ($code === 403 && self::isRateLimitMessage($e->getMessage()))) {
+                return FailureClass::Throttle;
+            }
+
+            if ($code >= 100 && $code <= 599) {
+                return FailureClass::fromStatus($code);
+            }
         }
 
+        return null;
+    }
+
+    #[\Override]
+    public function isRetryable(\Throwable $e): ?bool
+    {
+        // Retryability is now derived from classification (core falls back to
+        // FailureClass::isRetryable() when this returns null), so we only keep
+        // CustomizesRetry for the reset-time backoff in retryDelayMs().
         return null;
     }
 

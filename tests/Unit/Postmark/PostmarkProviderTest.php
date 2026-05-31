@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Tests\Unit\Postmark;
 
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Psr7\Request as GuzzleRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -27,11 +29,14 @@ use Integrations\Adapters\Postmark\PostmarkCredentials;
 use Integrations\Adapters\Postmark\PostmarkMetadata;
 use Integrations\Adapters\Postmark\PostmarkProvider;
 use Integrations\Adapters\Tests\TestCase;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
+use RuntimeException;
 
 class PostmarkProviderTest extends TestCase
 {
@@ -44,6 +49,19 @@ class PostmarkProviderTest extends TestCase
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HandlesWebhooks::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
+        $this->assertInstanceOf(ClassifiesFailures::class, $provider);
+    }
+
+    public function test_classify_failure(): void
+    {
+        $provider = new PostmarkProvider;
+
+        // A bare connection error has no status, so the provider maps it to an
+        // upstream fault. Postmark's own exception exposes getHttpStatusCode(),
+        // which core's duck-typing reads, so status-bearing errors defer to the
+        // default classifier (return null).
+        $this->assertSame(FailureClass::Upstream, $provider->classifyFailure(new ConnectException('refused', new GuzzleRequest('GET', 'https://api.postmarkapp.com'))));
+        $this->assertNull($provider->classifyFailure(new RuntimeException('mystery')));
     }
 
     public function test_name(): void

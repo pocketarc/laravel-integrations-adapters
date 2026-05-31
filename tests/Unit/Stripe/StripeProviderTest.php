@@ -11,11 +11,16 @@ use Integrations\Adapters\Stripe\StripeCredentials;
 use Integrations\Adapters\Stripe\StripeMetadata;
 use Integrations\Adapters\Stripe\StripeProvider;
 use Integrations\Adapters\Tests\TestCase;
+use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
+use RuntimeException;
+use Stripe\Exception\ApiConnectionException;
+use Stripe\Exception\InvalidRequestException;
 
 class StripeProviderTest extends TestCase
 {
@@ -28,6 +33,24 @@ class StripeProviderTest extends TestCase
         $this->assertInstanceOf(IntegrationProvider::class, $provider);
         $this->assertInstanceOf(HandlesWebhooks::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
+        $this->assertInstanceOf(ClassifiesFailures::class, $provider);
+    }
+
+    public function test_classify_failure(): void
+    {
+        $provider = new StripeProvider;
+
+        // A connection error carries no HTTP status, so the provider maps it
+        // explicitly; core's duck-typing can't see it.
+        $this->assertSame(FailureClass::Upstream, $provider->classifyFailure(new ApiConnectionException('network down')));
+
+        // Status-bearing Stripe errors map by range via getHttpStatus().
+        $this->assertSame(FailureClass::Client, $provider->classifyFailure(InvalidRequestException::factory('bad request', 400)));
+        $this->assertSame(FailureClass::Throttle, $provider->classifyFailure(InvalidRequestException::factory('slow down', 429)));
+        $this->assertSame(FailureClass::Upstream, $provider->classifyFailure(InvalidRequestException::factory('down', 503)));
+
+        // Non-Stripe exceptions defer to the core classifier.
+        $this->assertNull($provider->classifyFailure(new RuntimeException('mystery')));
     }
 
     public function test_name(): void
