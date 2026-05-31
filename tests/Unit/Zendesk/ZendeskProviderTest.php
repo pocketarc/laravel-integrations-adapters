@@ -4,21 +4,29 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Tests\Unit\Zendesk;
 
+use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Http;
 use Integrations\Adapters\Tests\TestCase;
+use Integrations\Adapters\Zendesk\ZendeskClient;
 use Integrations\Adapters\Zendesk\ZendeskCredentials;
 use Integrations\Adapters\Zendesk\ZendeskMetadata;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Enums\FailureClass;
 use Integrations\Enums\RateLimitWindow;
+use Integrations\Models\Integration;
 use RuntimeException;
+use Zendesk\API\HttpClient as ZendeskAPI;
 
 class ZendeskProviderTest extends TestCase
 {
@@ -31,6 +39,7 @@ class ZendeskProviderTest extends TestCase
         $this->assertInstanceOf(HasIncrementalSync::class, $provider);
         $this->assertInstanceOf(RedactsRequestData::class, $provider);
         $this->assertInstanceOf(ClassifiesFailures::class, $provider);
+        $this->assertInstanceOf(IdentifiesAuthenticatedUser::class, $provider);
     }
 
     public function test_classify_failure(): void
@@ -173,5 +182,92 @@ class ZendeskProviderTest extends TestCase
         );
 
         $this->assertTrue($provider->healthCheck($integration));
+    }
+
+    public function test_authenticated_user_maps_the_current_user(): void
+    {
+        $integration = $this->createIntegration(
+            providerKey: 'zendesk',
+            providerClass: ZendeskProvider::class,
+            credentials: ['email' => 'admin@acme.com', 'token' => 'abc123'],
+            metadata: ['subdomain' => 'acme'],
+        );
+
+        $provider = $this->makeProviderWithMockedSdk(new MockHandler([
+            $this->jsonResponse(['user' => $this->fakeUser()]),
+        ]));
+
+        $user = $provider->authenticatedUser($integration);
+
+        $this->assertSame('456', $user->id);
+        $this->assertSame('agent@acme.com', $user->username);
+        $this->assertSame('Acme Agent', $user->name);
+        $this->assertSame('agent@acme.com', $user->email);
+        $this->assertSame(456, $user->raw['id']);
+    }
+
+    private function makeProviderWithMockedSdk(MockHandler $mockHandler): ZendeskProvider
+    {
+        $sdk = new ZendeskAPI('acme');
+        $sdk->setAuth('basic', ['username' => 'admin@acme.com', 'token' => 'abc123']);
+        $sdk->guzzle = new GuzzleClient(['handler' => HandlerStack::create($mockHandler)]);
+
+        return new class($sdk) extends ZendeskProvider
+        {
+            public function __construct(private readonly ZendeskAPI $injectedSdk) {}
+
+            #[\Override]
+            protected function makeClient(Integration $integration): ZendeskClient
+            {
+                return new ZendeskClient($integration, $this->injectedSdk);
+            }
+        };
+    }
+
+    private function jsonResponse(mixed $data, int $status = 200): Response
+    {
+        $json = json_encode($data);
+
+        return new Response($status, ['Content-Type' => 'application/json'], is_string($json) ? $json : '{}');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fakeUser(): array
+    {
+        return [
+            'id' => 456,
+            'url' => 'https://acme.zendesk.com/api/v2/users/456.json',
+            'name' => 'Acme Agent',
+            'email' => 'agent@acme.com',
+            'external_id' => null,
+            'active' => true,
+            'suspended' => false,
+            'verified' => true,
+            'role' => 'agent',
+            'role_type' => null,
+            'custom_role_id' => null,
+            'moderator' => false,
+            'ticket_restriction' => null,
+            'only_private_comments' => false,
+            'restricted_agent' => false,
+            'organization_id' => null,
+            'default_group_id' => null,
+            'phone' => null,
+            'shared_phone_number' => null,
+            'photo' => null,
+            'time_zone' => 'UTC',
+            'iana_time_zone' => 'Etc/UTC',
+            'locale_id' => 1,
+            'locale' => 'en-US',
+            'created_at' => '2026-01-01T00:00:00Z',
+            'updated_at' => '2026-01-01T00:00:00Z',
+            'last_login_at' => null,
+            'two_factor_auth_enabled' => null,
+            'shared' => false,
+            'shared_agent' => false,
+            'report_csv' => false,
+        ];
     }
 }

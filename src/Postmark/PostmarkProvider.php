@@ -28,7 +28,9 @@ use Integrations\Adapters\Postmark\Events\PostmarkWebhookReceived;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Data\AuthenticatedUser;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use RuntimeException;
@@ -51,7 +53,7 @@ use Throwable;
  *    integrations should call `useForMail()` per request to swap which
  *    one is active.
  */
-class PostmarkProvider implements ClassifiesFailures, HandlesWebhooks, HasHealthCheck, IntegrationProvider
+class PostmarkProvider implements ClassifiesFailures, HandlesWebhooks, HasHealthCheck, IdentifiesAuthenticatedUser, IntegrationProvider
 {
     #[\Override]
     public function classifyFailure(Throwable $e): ?FailureClass
@@ -145,6 +147,33 @@ class PostmarkProvider implements ClassifiesFailures, HandlesWebhooks, HasHealth
         } catch (Throwable) {
             return false;
         }
+    }
+
+    /**
+     * The Postmark server the token authenticates as. A server token is scoped
+     * to a single server, so the server is the principal: its id and name are
+     * mapped onto the user shape, with no username or email to surface.
+     */
+    #[\Override]
+    public function authenticatedUser(Integration $integration): AuthenticatedUser
+    {
+        $server = $this->makeClient($integration)->server()->retrieve();
+
+        $id = $server['ID'] ?? null;
+        $name = $server['Name'] ?? null;
+
+        return new AuthenticatedUser(
+            id: is_int($id) || is_string($id) ? (string) $id : '',
+            username: null,
+            name: is_string($name) ? $name : null,
+            email: null,
+            raw: $server,
+        );
+    }
+
+    protected function makeClient(Integration $integration): PostmarkClient
+    {
+        return new PostmarkClient($integration);
     }
 
     /**

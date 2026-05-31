@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe;
 
+use Integrations\Adapters\Stripe\Resources\StripeAccount;
 use Integrations\Adapters\Stripe\Resources\StripeCharges;
 use Integrations\Adapters\Stripe\Resources\StripeCustomers;
 use Integrations\Adapters\Stripe\Resources\StripeDisputes;
@@ -42,6 +43,8 @@ class StripeClient
     private ?StripeEvents $events = null;
 
     private ?StripeWebhookEndpoints $webhookEndpoints = null;
+
+    private ?StripeAccount $account = null;
 
     public function __construct(
         private readonly Integration $integration,
@@ -83,6 +86,11 @@ class StripeClient
     public function webhookEndpoints(): StripeWebhookEndpoints
     {
         return $this->webhookEndpoints ??= new StripeWebhookEndpoints($this->integration, $this);
+    }
+
+    public function account(): StripeAccount
+    {
+        return $this->account ??= new StripeAccount($this->integration, $this);
     }
 
     public function getSdkClient(): StripeSdkClient
