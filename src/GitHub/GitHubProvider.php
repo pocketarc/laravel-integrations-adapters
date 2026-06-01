@@ -10,21 +10,24 @@ use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
+use Integrations\Adapters\GitHub\Data\GitHubUserData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
 use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\CustomizesRetry;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Data\AuthenticatedUser;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 
-class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
+class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCheck, HasIncrementalSync, IdentifiesAuthenticatedUser, IntegrationProvider, RedactsRequestData
 {
     use ReducesCheckpointsByMax;
 
@@ -228,6 +231,21 @@ class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCh
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    #[\Override]
+    public function authenticatedUser(Integration $integration): AuthenticatedUser
+    {
+        $payload = $this->makeClient($integration)->users()->authenticated();
+        $user = GitHubUserData::from($payload);
+
+        return new AuthenticatedUser(
+            id: (string) $user->id,
+            username: $user->login,
+            name: $user->name,
+            email: $user->email,
+            raw: $payload,
+        );
     }
 
     private static function parseTimestamp(mixed $value): ?Carbon

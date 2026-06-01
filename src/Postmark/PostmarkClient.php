@@ -6,6 +6,7 @@ namespace Integrations\Adapters\Postmark;
 
 use Integrations\Adapters\Postmark\Resources\PostmarkBounces;
 use Integrations\Adapters\Postmark\Resources\PostmarkMessages;
+use Integrations\Adapters\Postmark\Resources\PostmarkServerInfo;
 use Integrations\Adapters\Postmark\Resources\PostmarkServerStats;
 use Integrations\Adapters\Postmark\Resources\PostmarkSuppressions;
 use Integrations\Adapters\Postmark\Resources\PostmarkWebhookEndpoints;
@@ -43,6 +44,8 @@ class PostmarkClient
 
     private ?PostmarkServerStats $serverStats = null;
 
+    private ?PostmarkServerInfo $server = null;
+
     private ?PostmarkWebhookEndpoints $webhookEndpoints = null;
 
     public function __construct(
@@ -70,6 +73,11 @@ class PostmarkClient
     public function serverStats(): PostmarkServerStats
     {
         return $this->serverStats ??= new PostmarkServerStats($this->integration, $this);
+    }
+
+    public function server(): PostmarkServerInfo
+    {
+        return $this->server ??= new PostmarkServerInfo($this->integration, $this);
     }
 
     public function webhookEndpoints(): PostmarkWebhookEndpoints

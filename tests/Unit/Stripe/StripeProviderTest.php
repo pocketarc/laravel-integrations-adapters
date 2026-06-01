@@ -12,19 +12,34 @@ use Integrations\Adapters\Stripe\StripeMetadata;
 use Integrations\Adapters\Stripe\StripeProvider;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Contracts\ClassifiesFailures;
+use Integrations\Contracts\DeclaresRateLimit;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Enums\FailureClass;
+use Integrations\Enums\RateLimitWindow;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
 use RuntimeException;
+use Stripe\ApiRequestor;
 use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\InvalidRequestException;
+use Stripe\HttpClient\ClientInterface;
+use Stripe\HttpClient\CurlClient;
 
 class StripeProviderTest extends TestCase
 {
     use CreatesIntegration;
+
+    protected function tearDown(): void
+    {
+        // The authenticated-user test swaps in a fake HTTP client globally;
+        // restore the default so it can't leak into other test classes.
+        ApiRequestor::setHttpClient(new CurlClient);
+
+        parent::tearDown();
+    }
 
     public function test_implements_required_contracts(): void
     {
@@ -34,6 +49,45 @@ class StripeProviderTest extends TestCase
         $this->assertInstanceOf(HandlesWebhooks::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
         $this->assertInstanceOf(ClassifiesFailures::class, $provider);
+        $this->assertInstanceOf(DeclaresRateLimit::class, $provider);
+        $this->assertInstanceOf(IdentifiesAuthenticatedUser::class, $provider);
+    }
+
+    public function test_default_rate_limit(): void
+    {
+        $limit = (new StripeProvider)->defaultRateLimit();
+
+        $this->assertSame(100, $limit->limit);
+        $this->assertSame(1, $limit->windowSeconds);
+        $this->assertSame(RateLimitWindow::Fixed, $limit->window);
+    }
+
+    public function test_authenticated_user_maps_the_account(): void
+    {
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => 'whsec_zzz',
+            ],
+        );
+
+        $body = (string) json_encode([
+            'id' => 'acct_123',
+            'object' => 'account',
+            'email' => 'owner@acme.com',
+            'business_profile' => ['name' => 'Acme Inc'],
+        ]);
+        ApiRequestor::setHttpClient(new FakeStripeHttpClient($body));
+
+        $user = (new StripeProvider)->authenticatedUser($integration);
+
+        $this->assertSame('acct_123', $user->id);
+        $this->assertNull($user->username);
+        $this->assertSame('Acme Inc', $user->name);
+        $this->assertSame('owner@acme.com', $user->email);
+        $this->assertSame('acct_123', $user->raw['id']);
     }
 
     public function test_classify_failure(): void
@@ -277,5 +331,25 @@ class StripeProviderTest extends TestCase
         $integration = Integration::create(['provider' => 'stripe', 'name' => 'Stripe']);
 
         $this->assertFalse((new StripeProvider)->healthCheck($integration));
+    }
+}
+
+/**
+ * Returns a canned body for any Stripe SDK request, so a provider call can be
+ * exercised end-to-end without real network I/O. Lives here rather than in a
+ * Fixtures/ directory because it's coupled to this file's account test.
+ */
+class FakeStripeHttpClient implements ClientInterface
+{
+    public function __construct(private readonly string $body) {}
+
+    /**
+     * @param  array<int, string>  $headers
+     * @param  array<string, mixed>  $params
+     * @return array{0: string, 1: int, 2: array<string, string>}
+     */
+    public function request($method, $absUrl, $headers, $params, $hasFile, $apiMode = 'v1', $maxNetworkRetries = null)
+    {
+        return [$this->body, 200, []];
     }
 }

@@ -9,6 +9,7 @@ use Github\Client as GithubSdkClient;
 use Integrations\Adapters\GitHub\Resources\GitHubAssets;
 use Integrations\Adapters\GitHub\Resources\GitHubComments;
 use Integrations\Adapters\GitHub\Resources\GitHubIssues;
+use Integrations\Adapters\GitHub\Resources\GitHubUsers;
 use Integrations\Models\Integration;
 use RuntimeException;
 
@@ -30,6 +31,8 @@ class GitHubClient
 
     private ?GitHubAssets $assets = null;
 
+    private ?GitHubUsers $users = null;
+
     public function __construct(
         private readonly Integration $integration,
         ?GithubSdkClient $sdk = null,
@@ -50,6 +53,11 @@ class GitHubClient
     public function assets(): GitHubAssets
     {
         return $this->assets ??= new GitHubAssets($this->integration, $this);
+    }
+
+    public function users(): GitHubUsers
+    {
+        return $this->users ??= new GitHubUsers($this->integration, $this);
     }
 
     public function getSdkClient(): GithubSdkClient

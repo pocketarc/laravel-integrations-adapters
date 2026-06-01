@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Tests\Unit\Postmark;
 
+use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Request as GuzzleRequest;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -25,6 +29,7 @@ use Integrations\Adapters\Postmark\Events\PostmarkOpenReceived;
 use Integrations\Adapters\Postmark\Events\PostmarkSpamComplaintReceived;
 use Integrations\Adapters\Postmark\Events\PostmarkSubscriptionChangeReceived;
 use Integrations\Adapters\Postmark\Events\PostmarkWebhookReceived;
+use Integrations\Adapters\Postmark\PostmarkClient;
 use Integrations\Adapters\Postmark\PostmarkCredentials;
 use Integrations\Adapters\Postmark\PostmarkMetadata;
 use Integrations\Adapters\Postmark\PostmarkProvider;
@@ -32,10 +37,12 @@ use Integrations\Adapters\Tests\TestCase;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
+use Postmark\PostmarkClient as PostmarkSdkClient;
 use RuntimeException;
 
 class PostmarkProviderTest extends TestCase
@@ -50,6 +57,47 @@ class PostmarkProviderTest extends TestCase
         $this->assertInstanceOf(HandlesWebhooks::class, $provider);
         $this->assertInstanceOf(HasHealthCheck::class, $provider);
         $this->assertInstanceOf(ClassifiesFailures::class, $provider);
+        $this->assertInstanceOf(IdentifiesAuthenticatedUser::class, $provider);
+    }
+
+    public function test_authenticated_user_maps_the_postmark_server(): void
+    {
+        $integration = $this->createIntegration(
+            providerKey: 'postmark',
+            providerClass: PostmarkProvider::class,
+            credentials: ['server_token' => 'srv-abc'],
+        );
+
+        $json = (string) json_encode([
+            'ID' => 12345,
+            'Name' => 'Transactional',
+            'Color' => 'blue',
+            'ServerLink' => 'https://postmarkapp.com/servers/12345/streams',
+        ]);
+
+        $sdk = new PostmarkSdkClient('srv-abc');
+        $sdk->setClient(new GuzzleClient(['handler' => HandlerStack::create(new MockHandler([
+            new Response(200, ['Content-Type' => 'application/json'], $json),
+        ]))]));
+
+        $provider = new class($sdk) extends PostmarkProvider
+        {
+            public function __construct(private readonly PostmarkSdkClient $injectedSdk) {}
+
+            #[\Override]
+            protected function makeClient(Integration $integration): PostmarkClient
+            {
+                return new PostmarkClient($integration, $this->injectedSdk);
+            }
+        };
+
+        $user = $provider->authenticatedUser($integration);
+
+        $this->assertSame('12345', $user->id);
+        $this->assertNull($user->username);
+        $this->assertSame('Transactional', $user->name);
+        $this->assertNull($user->email);
+        $this->assertSame(12345, $user->raw['ID']);
     }
 
     public function test_classify_failure(): void

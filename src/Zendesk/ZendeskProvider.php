@@ -14,8 +14,10 @@ use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasIncrementalSync;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Data\AuthenticatedUser;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\RateLimit;
@@ -23,7 +25,7 @@ use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
 use Throwable;
 
-class ZendeskProvider implements ClassifiesFailures, HasHealthCheck, HasIncrementalSync, IntegrationProvider, RedactsRequestData
+class ZendeskProvider implements ClassifiesFailures, HasHealthCheck, HasIncrementalSync, IdentifiesAuthenticatedUser, IntegrationProvider, RedactsRequestData
 {
     use ReducesCheckpointsByMax;
 
@@ -190,6 +192,20 @@ class ZendeskProvider implements ClassifiesFailures, HasHealthCheck, HasIncremen
         } catch (Throwable) {
             return false;
         }
+    }
+
+    #[\Override]
+    public function authenticatedUser(Integration $integration): AuthenticatedUser
+    {
+        $user = $this->makeClient($integration)->users()->authenticated();
+
+        return new AuthenticatedUser(
+            id: (string) $user->id,
+            username: $user->email,
+            name: $user->name,
+            email: $user->email,
+            raw: $user->original ?? [],
+        );
     }
 
     protected function makeClient(Integration $integration): ZendeskClient

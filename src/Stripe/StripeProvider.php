@@ -7,13 +7,18 @@ namespace Integrations\Adapters\Stripe;
 use Illuminate\Http\Request;
 use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Contracts\ClassifiesFailures;
+use Integrations\Contracts\DeclaresRateLimit;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\SupportsIdempotency;
+use Integrations\Data\AuthenticatedUser;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
+use Integrations\RateLimit;
 use Safe\Exceptions\JsonException;
+use Stripe\Account;
 use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
@@ -33,7 +38,7 @@ use function Safe\json_decode;
  * its resource accessors (`->paymentIntents()`, `->refunds()`, etc.) rather
  * than reaching into `\Stripe\*` types.
  */
-class StripeProvider implements ClassifiesFailures, HandlesWebhooks, HasHealthCheck, IntegrationProvider, SupportsIdempotency
+class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWebhooks, HasHealthCheck, IdentifiesAuthenticatedUser, IntegrationProvider, SupportsIdempotency
 {
     #[\Override]
     public function classifyFailure(Throwable $e): ?FailureClass
@@ -179,12 +184,58 @@ class StripeProvider implements ClassifiesFailures, HandlesWebhooks, HasHealthCh
     public function healthCheck(Integration $integration): bool
     {
         try {
-            (new StripeClient($integration))->getSdkClient()->balance->retrieve();
+            $this->makeClient($integration)->getSdkClient()->balance->retrieve();
 
             return true;
         } catch (Throwable) {
             return false;
         }
+    }
+
+    #[\Override]
+    public function authenticatedUser(Integration $integration): AuthenticatedUser
+    {
+        $account = $this->makeClient($integration)->account()->retrieve();
+
+        return new AuthenticatedUser(
+            id: $account->id,
+            username: null,
+            name: $account->business_profile?->name,
+            email: $account->email,
+            raw: self::accountToArray($account),
+        );
+    }
+
+    /**
+     * `StripeObject::toArray()` is typed `array` (int|string keys), but a
+     * Stripe account's keys are always strings; narrow to the shape
+     * {@see AuthenticatedUser} wants.
+     *
+     * @return array<string, mixed>
+     */
+    private static function accountToArray(Account $account): array
+    {
+        $raw = [];
+        foreach ($account->toArray() as $key => $value) {
+            if (is_string($key)) {
+                $raw[$key] = $value;
+            }
+        }
+
+        return $raw;
+    }
+
+    #[\Override]
+    public function defaultRateLimit(): RateLimit
+    {
+        // Stripe's documented live-mode ceiling is 100 read or write requests
+        // per second; throttle locally to stay under it.
+        return RateLimit::per(100, 1);
+    }
+
+    protected function makeClient(Integration $integration): StripeClient
+    {
+        return new StripeClient($integration);
     }
 
     /**
