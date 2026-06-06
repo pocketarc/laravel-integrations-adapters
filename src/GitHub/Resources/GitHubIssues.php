@@ -136,6 +136,51 @@ class GitHubIssues extends GitHubResource
     }
 
     /**
+     * Edit an existing issue's title and/or body.
+     *
+     * Pass `$title` and/or `$body`; at least one must be non-null. A PATCH
+     * with nothing to change is a programmer error, not a no-op, so it throws
+     * rather than firing a wasted request. `$idempotencyKey` behaves exactly
+     * as on {@see create()}.
+     */
+    public function update(
+        int $issueNumber,
+        ?string $title = null,
+        ?string $body = null,
+        ?string $idempotencyKey = null,
+    ): ?GitHubIssueData {
+        if ($title === null && $body === null) {
+            throw new \InvalidArgumentException('update() requires a title and/or body to change.');
+        }
+
+        return $this->executeWithErrorHandling(function () use ($issueNumber, $title, $body, $idempotencyKey): GitHubIssueData {
+            $params = [];
+
+            if ($title !== null) {
+                $params['title'] = $title;
+            }
+
+            if ($body !== null) {
+                $params['body'] = $body;
+            }
+
+            /** @var array<string, mixed> $response */
+            $response = $this->integration
+                ->at("repos/{$this->owner()}/{$this->repo()}/issues/{$issueNumber}")
+                ->withData($params)
+                ->withIdempotencyKey($idempotencyKey)
+                ->patch(function (RequestContext $ctx) use ($issueNumber, $params): array {
+                    $issue = $this->getIssueApi()->update($this->owner(), $this->repo(), $issueNumber, $params);
+                    $this->reportGitHubMetadata($ctx);
+
+                    return $issue;
+                });
+
+            return GitHubIssueData::from($response);
+        });
+    }
+
+    /**
      * Get issues updated since a specific time.
      *
      * @param  callable(array<string, mixed>): void  $callback
