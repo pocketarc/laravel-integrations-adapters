@@ -203,6 +203,33 @@ class GitHubClientTest extends TestCase
         $this->assertSame('closed', $result->state);
     }
 
+    public function test_update_issue_sends_patch_and_returns_issue_data(): void
+    {
+        $mockHttp = new MockHttpClient;
+        $mockHttp->addResponse($this->jsonResponse(array_merge($this->fakeIssue(), ['body' => 'Updated body'])));
+
+        $client = $this->createClient($mockHttp);
+        $result = $client->issues()->update(42, body: 'Updated body');
+
+        $this->assertInstanceOf(GitHubIssueData::class, $result);
+        $this->assertSame('Updated body', $result->body);
+
+        $requests = $mockHttp->getRequests();
+        $this->assertCount(1, $requests);
+        $this->assertSame('PATCH', $requests[0]->getMethod());
+        $this->assertStringContainsString('/repos/acme/widgets/issues/42', (string) $requests[0]->getUri());
+        $this->assertStringContainsString('Updated body', (string) $requests[0]->getBody());
+    }
+
+    public function test_update_issue_without_title_or_body_throws(): void
+    {
+        $client = $this->createClient(new MockHttpClient);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $client->issues()->update(42);
+    }
+
     public function test_add_comment_returns_comment_data(): void
     {
         config(['app.debug' => true]);
